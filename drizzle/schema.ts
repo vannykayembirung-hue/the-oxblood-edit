@@ -1,4 +1,5 @@
 import { pgTable, uuid, text, integer, timestamp } from "drizzle-orm/pg-core";
+import type { InferSelectModel, InferInsertModel } from "drizzle-orm";
 
 export const articles = pgTable("articles", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -40,3 +41,11 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   password: text("password").notNull()
 });
+
+export type Article = InferSelectModel<typeof articles>;
+export type NewArticle = InferInsertModel<typeof articles>;
+export type Product = InferSelectModel<typeof products>;
+export type NewProduct = InferInsertModel<typeof products>;
+export type AffiliateLink = InferSelectModel<typeof affiliateLinks>;
+export type NewAffiliateLink = InferInsertModel<typeof affiliateLinks>;
+export type User = InferSelectModel<typeof users>;

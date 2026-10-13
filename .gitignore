@@ -3,4 +3,8 @@ node_modules
 .env
 .env.local
 .vercel
+.data
+public/uploads
+*.tsbuildinfo
+next-env.d.ts
 *.zip
