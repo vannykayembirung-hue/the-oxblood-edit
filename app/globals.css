@@ -1,0 +1,85 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #EDE4D0;
+  color: #0B0A08;
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  line-height: 1.6;
+}
+
+h1, h2, h3, h4 {
+  font-family: 'Cinzel', Georgia, serif;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+}
+
+a {
+  color: inherit;
+}
+
+.btn-gold {
+  background: #C6A15B;
+  color: #0B0A08;
+  font-family: 'Cinzel', Georgia, serif;
+  padding: 14px 24px;
+  display: inline-block;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  transition: background-color 0.2s ease;
+}
+
+.btn-gold:hover {
+  background: #b8924a;
+}
+
+.editorial-prose {
+  font-size: 1.25rem;
+  line-height: 1.75;
+}
+
+.editorial-prose h2 {
+  font-size: 1.65rem;
+  margin-top: 2.25rem;
+  margin-bottom: 0.75rem;
+  color: #6E1423;
+}
+
+.editorial-prose h3 {
+  font-size: 1.3rem;
+  margin-top: 1.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.editorial-prose p {
+  margin-bottom: 1.25rem;
+}
+
+.editorial-prose ul,
+.editorial-prose ol {
+  margin: 1rem 0 1.5rem 1.5rem;
+}
+
+.editorial-prose li {
+  margin-bottom: 0.5rem;
+}
+
+.editorial-prose blockquote {
+  border-left: 3px solid #C6A15B;
+  padding-left: 1.25rem;
+  margin: 1.75rem 0;
+  font-style: italic;
+  color: #6E1423;
+}
