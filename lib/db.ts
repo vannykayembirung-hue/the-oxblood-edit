@@ -2,6 +2,12 @@ import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 import * as schema from "@/drizzle/schema";
 import { sanitizeEditorialHtml, slugify } from "@/lib/sanitize";
+import {
+  EDITORIAL_PLATES,
+  getArticleEditorialLayout,
+  type EditorialPlate,
+  type EditorialPlateKey
+} from "@/lib/editorial-visuals";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
@@ -9,6 +15,142 @@ import crypto from "crypto";
 export const hasDatabaseUrl = Boolean(process.env.DATABASE_URL);
 export const sql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
 export const db = sql ? drizzle(sql, { schema }) : null;
+
+/** Copy the admin editor ships with before an editor has written anything. */
+const PLACEHOLDER_CONTENT_MARKERS = [
+  "Edit this article in the admin",
+  "Edit this article",
+  "Lorem ipsum"
+];
+
+const ROMAN_NUMERALS = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII"];
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** Builds the 16:9 plate markup injected into (or appended to) article bodies. */
+export function buildEditorialPlateHtml(plate: EditorialPlate, index = 0): string {
+  const numeral = ROMAN_NUMERALS[index] ?? String(index + 1);
+  const caption = plate.caption.replace(/^Plate\s+[IVX]+\s*·\s*/i, "");
+  return (
+    `<figure class="plate plate--${index + 1} aspect-video">` +
+    `<img src="${plate.src}" alt="${escapeHtml(plate.alt)}" ` +
+    `width="1920" height="1080" loading="lazy" decoding="async" class="aspect-video" />` +
+    `<figcaption>Plate ${numeral} · ${escapeHtml(caption)}</figcaption>` +
+    `</figure>`
+  );
+}
+
+function stripTags(html: string): string {
+  return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function containsPlaceholderCopy(html: string): boolean {
+  const text = stripTags(html).toLowerCase();
+  if (!text) return true;
+  return PLACEHOLDER_CONTENT_MARKERS.some((marker) => text.includes(marker.toLowerCase()));
+}
+
+/** Number of already-placed 16:9 figures, so injected plates keep their roman order. */
+function figureOffset(html: string): number {
+  if (!html) return 0;
+  return (html.match(/<figure\b[^>]*>[\s\S]*?<\/figure>/gi) ?? []).length;
+}
+
+/** Drops admin placeholder paragraphs while preserving any real copy around them. */
+function stripPlaceholderBlocks(html: string): string {
+  if (!html) return "";
+
+  const withoutPlaceholderParagraphs = html
+    .replace(/<p\b[^>]*>[\s\S]*?<\/p>/gi, (block) => {
+      const text = stripTags(block).toLowerCase();
+      return PLACEHOLDER_CONTENT_MARKERS.some((marker) => text.includes(marker.toLowerCase()))
+        ? ""
+        : block;
+    })
+    .trim();
+
+  const remainingText = stripTags(withoutPlaceholderParagraphs);
+  const looksLikeLeftoverPlaceholder =
+    remainingText.length < 40 &&
+    PLACEHOLDER_CONTENT_MARKERS.some((marker) =>
+      remainingText.toLowerCase().includes(marker.toLowerCase())
+    );
+
+  if (!remainingText || looksLikeLeftoverPlaceholder) return "";
+  return withoutPlaceholderParagraphs;
+}
+
+function isLegacyOrMissingCover(coverImage: string | null | undefined): boolean {
+  const value = (coverImage ?? "").trim();
+  if (!value) return true;
+  // Anything uploaded from the admin (Vercel Blob, remote CDN) is respected as-is;
+  // the frame CSS crops it to a strict 16:9. Only missing or legacy repo assets
+  // — the old square /images/* paths — fall back to the curated 16:9 cover.
+  if (/^https?:\/\//i.test(value)) return false;
+  return !/16x9/i.test(value);
+}
+
+/**
+ * Guarantees the Dark Elegance 16:9 treatment for every article the site reads.
+ *
+ * Older Neon rows can come back with a NULL cover, a legacy square image, or the
+ * "Edit this article in the admin" placeholder body. Rather than render an empty
+ * card, this fills in the curated 16:9 cover and injects the story's 16:9 plates
+ * into content_html — so the public site is always complete.
+ */
+export function enrichArticleWithEditorialDefaults<T extends Partial<ArticleRecord>>(
+  article: T
+): T {
+  const layout = getArticleEditorialLayout(article.slug, article.category);
+  const enriched: T = { ...article };
+
+  if (isLegacyOrMissingCover(enriched.cover_image)) {
+    enriched.cover_image = layout.cover.src;
+  }
+
+  const existingBody = stripPlaceholderBlocks((enriched.content_html ?? "").trim());
+  const desiredPlates = layout.plates.slice(0, 2);
+  const missingPlates = desiredPlates.filter((plateItem) => !existingBody.includes(plateItem.src));
+
+  if (missingPlates.length > 0) {
+    const firstFigureIndex = figureOffset(existingBody);
+    const plateHtmlBlocks = missingPlates.map((plateItem, index) =>
+      buildEditorialPlateHtml(plateItem, firstFigureIndex + index)
+    );
+
+    if (!existingBody) {
+      const excerptLine = enriched.excerpt?.trim();
+      const leadParagraph = `<p>${escapeHtml(
+        excerptLine ||
+          "A considered note from the journal: dark-romantic fashion, beauty and interiors, edited for US & UK wardrobes."
+      )}</p>`;
+      enriched.content_html = leadParagraph + plateHtmlBlocks.join("");
+    } else {
+      const anchor = existingBody.search(/<\/(h2|h3|p)>/i);
+      const [firstPlate, ...remainingPlates] = plateHtmlBlocks;
+      if (anchor === -1) {
+        enriched.content_html = `${existingBody}${plateHtmlBlocks.join("")}`;
+      } else {
+        const insertAt = existingBody.indexOf(">", anchor) + 1;
+        enriched.content_html =
+          existingBody.slice(0, insertAt) +
+          firstPlate +
+          existingBody.slice(insertAt) +
+          remainingPlates.join("");
+      }
+    }
+  }
+
+  return enriched;
+}
+
+
 
 export interface ArticleRecord {
   id: string;
@@ -51,6 +193,10 @@ interface LocalStoreData {
   affiliate_links: AffiliateLinkRecord[];
 }
 
+/** Convenience for the seed bodies below: an inline 16:9 plate with a roman caption. */
+const articleFigure = (key: EditorialPlateKey, index: number): string =>
+  buildEditorialPlateHtml(EDITORIAL_PLATES[key], index);
+
 const DEFAULT_SEED_DATA: LocalStoreData = {
   articles: [
     {
@@ -58,9 +204,10 @@ const DEFAULT_SEED_DATA: LocalStoreData = {
       slug: "how-to-dress-like-the-villainess-dark-romance-outfits",
       title: "How to Dress Like the Villainess: 7 Dark Romance Outfits",
       excerpt: "The oxblood satin, black lace and velvet formula. 3 budgets for US & UK.",
-      cover_image: null,
-      content_html:
-        "<h2>The Architecture of Restraint</h2><p>True dark romance never relies on costume. It is built on tension: fluid oxblood silk against heavyweight cavalry twill, antique gold hardware against matte jet wool, and silhouettes that command a room without raising their voice.</p><h2>The 3 Key Anchor Pieces</h2><ul><li><strong>The Floor-Sweeping Belted Coat:</strong> Choose double-faced wool in espresso, charcoal, or deep oxblood (#6E1423) with a defined shoulder line.</li><li><strong>The Bias-Cut Satin Slip or Skirt:</strong> Liquid movement balances structured outerwear and transitions seamlessly from dusk to candlelight.</li><li><strong>The Square-Toe Leather Boot:</strong> A sculptural heel in burnished burgundy or black calfskin grounds delicate lace and sheer layers.</li></ul><blockquote><p>&ldquo;Elegance is refusal—knowing which single statement texture belongs in the frame and stripping away the rest.&rdquo;</p></blockquote><h2>Three Budgets for US &amp; UK Wardrobes</h2><p>Whether sourcing heritage British wool on Savile Row, contemporary New York tailoring, or second-hand archival velvet, apply the 70/20/10 rule: 70% matte black or charcoal structure, 20% oxblood depth, and 10% antique gold or luminous skin.</p>",
+      cover_image: EDITORIAL_PLATES.villainessHero.src,
+      content_html: `
+        ${articleFigure("villainessHero", 0)}
+        <h2>The Architecture of Restraint</h2><p>True dark romance never relies on costume. It is built on tension: fluid oxblood silk against heavyweight cavalry twill, antique gold hardware against matte jet wool, and silhouettes that command a room without raising their voice.</p><h2>The 3 Key Anchor Pieces</h2><ul><li><strong>The Floor-Sweeping Belted Coat:</strong> Choose double-faced wool in espresso, charcoal, or deep oxblood (#6E1423) with a defined shoulder line.</li><li><strong>The Bias-Cut Satin Slip or Skirt:</strong> Liquid movement balances structured outerwear and transitions seamlessly from dusk to candlelight.</li><li><strong>The Square-Toe Leather Boot:</strong> A sculptural heel in burnished burgundy or black calfskin grounds delicate lace and sheer layers.</li></ul><blockquote><p>&ldquo;Elegance is refusal&mdash;knowing which single statement texture belongs in the frame and stripping away the rest.&rdquo;</p></blockquote>${articleFigure("villainessDetail", 1)}<h2>Seven Formulas, One Spine</h2><ol><li><strong>The Nine O&rsquo;Clock Exit:</strong> Jet velvet cape, oxblood satin column, gold signet at the cuff.</li><li><strong>The Reading Room:</strong> Ink merino turtleneck, ivory poet blouse left open one button, charcoal pleated trouser.</li><li><strong>The Uninvited Guest:</strong> Wine velvet blazer over a black Chantilly camisole.</li><li><strong>Rain on a London Square:</strong> Beltless cavalry coat, cordovan horsebit loafer, sheer black hosiery.</li><li><strong>The Long Supper:</strong> Bias-cut midi in dried wine, bare shoulder, one brass ring.</li><li><strong>Second Hand, First Rate:</strong> Archival velvet taken in at the shoulder, never at the hem.</li><li><strong>The Verdict:</strong> Parchment silk at the throat against an all-black column&mdash;the only brightness permitted.</li></ol><h2>Three Budgets for US &amp; UK Wardrobes</h2><p>Whether sourcing heritage British wool on Savile Row, contemporary New York tailoring, or second-hand archival velvet, apply the 70/20/10 rule: 70% matte black or charcoal structure, 20% oxblood depth, and 10% antique gold or luminous skin.</p>`,
       meta_title: "How to Dress Like the Villainess — 7 Dark Romance Outfits | The Oxblood Edit",
       meta_description:
         "Master the oxblood satin, structured wool and black velvet silhouette with 7 intentional formulas across three budgets.",
@@ -73,9 +220,10 @@ const DEFAULT_SEED_DATA: LocalStoreData = {
       slug: "the-3-piece-british-autumn-formula",
       title: "The 3-Piece British Autumn Formula: Coat + Knit + Loafers",
       excerpt: "The coat + knit + loafers tested for US & UK fall.",
-      cover_image: null,
-      content_html:
-        "<h2>Why the Three-Piece Formula Works</h2><p>From London squares in October mist to New England avenues in late November, the most reliable transitional uniform consists of three disciplined pieces: a tailored longline coat, a fine-gauge merino or cashmere turtleneck, and lug-sole or classic horsebit loafers in oxblood leather.</p><h2>1. The Tailored Coat</h2><p>Look for a minimum 75% wool composition with a Raglan or sharp set-in sleeve. Hemlines falling mid-calf elongate the frame and protect silk or wool trousers from autumn rain.</p><h2>2. The Fine-Gauge Knit</h2><p>Charcoal, espresso, or ink-black merino worn close to the collar bone frames gold jewelry and structured lapels without bulk.</p><h2>3. The Oxblood Loafer</h2><p>Cordovan or oxblood leather acts as a neutral while adding warmth against slate pavements. Pair with sheer black hosiery or ribbed cashmere socks.</p>",
+      cover_image: EDITORIAL_PLATES.britishAutumn.src,
+      content_html: `
+        ${articleFigure("britishAutumn", 0)}
+        <h2>Why the Three-Piece Formula Works</h2><p>From London squares in October mist to New England avenues in late November, the most reliable transitional uniform consists of three disciplined pieces: a tailored longline coat, a fine-gauge merino or cashmere turtleneck, and lug-sole or classic horsebit loafers in oxblood leather.</p><h2>1. The Tailored Coat</h2><p>Look for a minimum 75% wool composition with a Raglan or sharp set-in sleeve. Hemlines falling mid-calf elongate the frame and protect silk or wool trousers from autumn rain.</p><h2>2. The Fine-Gauge Knit</h2><p>Charcoal, espresso, or ink-black merino worn close to the collar bone frames gold jewelry and structured lapels without bulk.</p><h2>3. The Oxblood Loafer</h2><p>Cordovan or oxblood leather acts as a neutral while adding warmth against slate pavements. Pair with sheer black hosiery or ribbed cashmere socks.</p>${articleFigure("britishLayers", 1)}<p>Three pieces is not a limitation; it is a rehearsal. Repeat the formula until it stops looking chosen and starts looking inevitable.</p>`,
       meta_title: "The 3-Piece British Autumn Formula: Coat + Knit + Loafers | The Oxblood Edit",
       meta_description:
         "A rain-tested British autumn uniform combining tailored outerwear, fine merino knitwear, and oxblood leather loafers.",
@@ -88,9 +236,10 @@ const DEFAULT_SEED_DATA: LocalStoreData = {
       slug: "vamp-romantic-capsule-wardrobe",
       title: "The 12-Piece Vamp Romantic Capsule Wardrobe",
       excerpt: "12 pieces for Fall/Winter 2026. Links to The Oxblood Code.",
-      cover_image: null,
-      content_html:
-        "<h2>12 Pieces, 36 Evening-to-Day Combinations</h2><p>A capsule wardrobe succeeds when every garment shares a disciplined chromatic spine. In <em>The Oxblood Code</em>, we anchor the season around four tones: Jet (#0B0A08), Oxblood (#6E1423), Parchment Cream (#EDE4D0), and Antique Gold (#C6A15B).</p><h3>The Outerwear &amp; Tailoring</h3><ul><li>Double-breasted black wool maxi coat</li><li>Velvet evening blazer in deep wine</li><li>High-waisted pleated wide-leg wool trousers</li></ul><h3>The Silk &amp; Knit Layers</h3><ul><li>Ivory silk poet blouse with subtle cuff detailing</li><li>Fine black merino turtleneck</li><li>Oxblood bias-cut midi skirt</li><li>Black Chantilly-trimmed silk camisole</li><li>Structured corset-seamed midi dress</li></ul><h3>The Footwear &amp; Finishing Accents</h3><ul><li>Oxblood leather loafers</li><li>Sculptural stiletto ankle boots</li><li>Gold signet hardware belt</li><li>Structured croc-embossed top-handle bag</li></ul>",
+      cover_image: EDITORIAL_PLATES.capsuleWardrobe.src,
+      content_html: `
+        ${articleFigure("capsuleWardrobe", 0)}
+        <h2>12 Pieces, 36 Evening-to-Day Combinations</h2><p>A capsule wardrobe succeeds when every garment shares a disciplined chromatic spine. In <em>The Oxblood Code</em>, we anchor the season around four tones: Jet (#0B0A08), Oxblood (#6E1423), Parchment Cream (#EDE4D0), and Antique Gold (#C6A15B).</p><h3>The Outerwear &amp; Tailoring</h3><ul><li>Double-breasted black wool maxi coat</li><li>Velvet evening blazer in deep wine</li><li>High-waisted pleated wide-leg wool trousers</li></ul><h3>The Silk &amp; Knit Layers</h3><ul><li>Ivory silk poet blouse with subtle cuff detailing</li><li>Fine black merino turtleneck</li><li>Oxblood bias-cut midi skirt</li><li>Black Chantilly-trimmed silk camisole</li><li>Structured corset-seamed midi dress</li></ul>${articleFigure("fibreLabelAtelier", 1)}<h3>The Footwear &amp; Finishing Accents</h3><ul><li>Oxblood leather loafers</li><li>Sculptural stiletto ankle boots</li><li>Gold signet hardware belt</li><li>Structured croc-embossed top-handle bag</li></ul><p>Twelve garments, thirty-six combinations, one palette: the arithmetic is the entire point of a capsule.</p>`,
       meta_title: "The 12-Piece Vamp Romantic Capsule Wardrobe (Fall/Winter 2026)",
       meta_description:
         "Build 36 cohesive dark-romantic outfits from 12 foundational garments in oxblood, jet black, and parchment cream.",
@@ -103,9 +252,10 @@ const DEFAULT_SEED_DATA: LocalStoreData = {
       slug: "smudged-kohl-oxblood-lips-tutorial",
       title: "Smudged Kohl & Oxblood Lips: Vamp Romantic Makeup Tutorial",
       excerpt: "US & UK products tutorial.",
-      cover_image: null,
-      content_html:
-        "<h2>The Rule of Velvet Skin and Lived-In Pigment</h2><p>When wearing a deep wine lip (#6E1423), heavy foundation immediately ages the look. Keep the complexion sheer and satin-finished so the contrast between skin and pigment feels effortless.</p><h2>Step 1: Soft-Focus Kohl</h2><p>Trace a creamy espresso or carbon kohl pencil along the upper tightline and outer third of the lower lash line, then diffuse with a dense smudger brush before it sets.</p><h2>Step 2: The Stained Oxblood Lip</h2><p>Press a burgundy matte lipstick into the center of the lips with your ring finger first, then define the Cupid&rsquo;s bow with a sharpened plum-brown liner for structure without harshness.</p>",
+      cover_image: EDITORIAL_PLATES.beautyKohlLips.src,
+      content_html: `
+        ${articleFigure("beautyKohlLips", 0)}
+        <h2>The Rule of Velvet Skin and Lived-In Pigment</h2><p>When wearing a deep wine lip (#6E1423), heavy foundation immediately ages the look. Keep the complexion sheer and satin-finished so the contrast between skin and pigment feels effortless.</p><h2>Step 1: Soft-Focus Kohl</h2><p>Trace a creamy espresso or carbon kohl pencil along the upper tightline and outer third of the lower lash line, then diffuse with a dense smudger brush before it sets.</p><h2>Step 2: The Stained Oxblood Lip</h2><p>Press a burgundy matte lipstick into the center of the lips with your ring finger first, then define the Cupid&rsquo;s bow with a sharpened plum-brown liner for structure without harshness.</p><h2>Step 3: What You Leave Out</h2><p>No contour, no cut crease, no highlighter above the cheekbone. One candlelit face should read as a face that has just put a book down.</p>`,
       meta_title: "Smudged Kohl & Oxblood Lips Tutorial | The Oxblood Edit",
       meta_description:
         "Achieve lived-in kohl liner and velvet-matte oxblood lips with luminous satin skin.",
@@ -118,15 +268,48 @@ const DEFAULT_SEED_DATA: LocalStoreData = {
       slug: "dark-elegance-dining-room-ideas",
       title: "7 Dark Elegance Dining Room Ideas: Oxblood & Candlelight",
       excerpt: "Dark-elegance home decor inspiration.",
-      cover_image: null,
-      content_html:
-        "<h2>Designing for Candlelight</h2><p>Dining rooms are used primarily after sundown; painting them stark white fights their natural atmosphere. Embracing deep oxblood, smoked oak, and unlacquered brass turns every dinner into an intimate salon.</p><ul><li>Limewash walls in muted burgundy or aubergine</li><li>Unlacquered brass taper holders at staggered heights</li><li>Unbleached parchment linen table runners</li></ul>",
+      cover_image: EDITORIAL_PLATES.diningRoomInteriors.src,
+      content_html: `
+        ${articleFigure("diningRoomInteriors", 0)}
+        <h2>Designing for Candlelight</h2><p>Dining rooms are used primarily after sundown; painting them stark white fights their natural atmosphere. Embracing deep oxblood, smoked oak, and unlacquered brass turns every dinner into an intimate salon.</p><ul><li>Limewash walls in muted burgundy or aubergine</li><li>Unlacquered brass taper holders at staggered heights</li><li>Unbleached parchment linen table runners</li><li>Black velvet chair backs that swallow the light</li><li>One mirrored sideboard, angled at the window</li><li>Heavy tapers only&mdash;never votives in glass</li><li>A single dried branch, no bouquet</li></ul><p>Seven decisions, one atmosphere: a room that flatters a face at ten at night.</p>`,
       meta_title: "7 Dark Elegance Dining Room Ideas: Oxblood & Candlelight",
       meta_description:
         "Transform your dining space with oxblood limewash walls, unlacquered brass candlesticks, and Belgian linen.",
       category: "interiors",
       status: "draft",
       created_at: "2026-10-13T16:00:00.000Z"
+    },
+    {
+      id: "a1000000-0000-4000-8000-000000000006",
+      slug: "the-british-layering-code-wool-merino-silk",
+      title: "The British Layering Code: Wool, Merino, Silk — In That Order",
+      excerpt: "Four textures, three temperatures, zero visual noise.",
+      cover_image: EDITORIAL_PLATES.britishLayers.src,
+      content_html: `
+        ${articleFigure("britishLayers", 0)}
+        <h2>The Order Is the Outfit</h2><p>Layering fails in Britain not from a shortage of cold but from a surplus of ambition. The code is sequential: silk against the skin for slip, merino for trapped air, wool for weather. Anything heavier goes outside, never between.</p><h2>Reading a Room by Its Shoulders</h2><ul><li><strong>Shoulder line:</strong> keep it unpadded and let the coat do the architecture.</li><li><strong>Collar gap:</strong> one finger between throat and knit; two if a ribbon is intended.</li><li><strong>Hem cascade:</strong> each layer ends at a different inch, never within two of its neighbour.</li></ul>${articleFigure("britishAutumn", 1)}<h2>Manchester to Manhattan</h2><p>At 6&deg;C and wet, the three-piece carries a full day. At 14&deg;C indoors, the silk and merino alone are the outfit&mdash;which is precisely what makes the formula worth the money.</p>`,
+      meta_title: "The British Layering Code: Wool, Merino, Silk | The Oxblood Edit",
+      meta_description:
+        "The silk-merino-wool sequence that survives a British autumn and reads as intent in a New York winter.",
+      category: "style",
+      status: "published",
+      created_at: "2026-10-14T07:30:00.000Z"
+    },
+    {
+      id: "a1000000-0000-4000-8000-000000000007",
+      slug: "reading-the-fibre-label-in-a-dark-atelier",
+      title: "Reading the Fibre Label in a Dark Atelier",
+      excerpt: "GSM, wool percentage, lining dyed to match: audit a garment before you buy it.",
+      cover_image: EDITORIAL_PLATES.fibreLabelAtelier.src,
+      content_html: `
+        ${articleFigure("fibreLabelAtelier", 0)}
+        <h2>Four Numbers Before Any Silhouette</h2><p>A dark-romantic wardrobe is bought with a calculator as much as an eye. Wool percentage, fabric weight in grams per square metre, lining composition, and the ratio of buttons to buttonholes will tell you more than a photograph ever will.</p><ul><li><strong>75% wool minimum</strong> in outerwear; below that, rain wins.</li><li><strong>320gsm and above</strong> for a coat that holds a line without interfacing.</li><li><strong>Viscose or cotton lining</strong> dyed to the shell, never contrast polyester.</li><li><strong>Horn or corozo buttons</strong>; plastic shines, and shine is the enemy of velvet.</li></ul><h2>The Candlelight Test</h2><p>Take the garment into a dim room before you decide anything. Dark elegance is engineered for low light: if the cloth goes flat beside a candle, it was bought for the shop floor.</p>`,
+      meta_title: "Reading the Fibre Label in a Dark Atelier | The Oxblood Edit",
+      meta_description:
+        "How to audit wool percentage, GSM, lining and hardware before committing to a dark-romantic garment.",
+      category: "craft",
+      status: "published",
+      created_at: "2026-10-14T09:10:00.000Z"
     }
   ],
   products: [
@@ -277,7 +460,9 @@ export async function getPublishedArticles(limit?: number): Promise<ArticleRecor
             where status = 'published'
             order by created_at desc
           `;
-      return rows.map((r) => normalizeArticleRow(r as Record<string, unknown>));
+      return rows
+        .map((r) => normalizeArticleRow(r as Record<string, unknown>))
+        .map(enrichArticleWithEditorialDefaults);
     } catch (error) {
       console.error("Database query failed in getPublishedArticles:", error);
     }
@@ -286,7 +471,9 @@ export async function getPublishedArticles(limit?: number): Promise<ArticleRecor
   const published = store.articles
     .filter((a) => a.status === "published")
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  return typeof limit === "number" ? published.slice(0, limit) : published;
+  return (typeof limit === "number" ? published.slice(0, limit) : published).map(
+    enrichArticleWithEditorialDefaults
+  );
 }
 
 export async function getAllArticles(): Promise<ArticleRecord[]> {
@@ -328,7 +515,9 @@ export async function getArticleBySlug(
             limit 1
           `;
       if (!rows[0]) return null;
-      return normalizeArticleRow(rows[0] as Record<string, unknown>);
+      return enrichArticleWithEditorialDefaults(
+        normalizeArticleRow(rows[0] as Record<string, unknown>)
+      );
     } catch (error) {
       console.error("Database query failed in getArticleBySlug:", error);
       return null;
@@ -338,7 +527,7 @@ export async function getArticleBySlug(
   const found = store.articles.find(
     (a) => a.slug === slug && (includeDrafts || a.status === "published")
   );
-  return found ?? null;
+  return found ? enrichArticleWithEditorialDefaults(found) : null;
 }
 
 export async function getArticleById(id: string): Promise<ArticleRecord | null> {

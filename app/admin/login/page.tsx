@@ -20,18 +20,18 @@ export default async function AdminLogin({
 
   return (
     <div className="px-[8%] py-16 max-w-xl mx-auto min-h-[65vh]">
-      <p className="font-cinzel text-xs tracking-[0.22em] text-oxblood uppercase mb-2">
+      <p className="eyebrow mb-3">
         Editorial Control Room
       </p>
       <h1 className="text-3xl md:text-4xl mb-3">Admin Sign In</h1>
-      <p className="text-lg text-nearblack/80 mb-6">
+      <p className="text-lg text-parchment/75 mb-6">
         Sign in to manage articles, product editions, and affiliate curation for The Oxblood Edit.
       </p>
 
       {errorCode && (
         <div
           role="alert"
-          className="mb-6 border-l-4 border-oxblood bg-oxblood/10 px-4 py-3 text-oxblood font-medium"
+          className="mb-6 border-l-4 border-oxblood bg-oxblood/25 px-4 py-3 text-parchment font-medium"
         >
           {errorCode === "missing"
             ? "Please enter both your email address and password."
@@ -40,19 +40,19 @@ export default async function AdminLogin({
       )}
 
       {isDevFallback && (
-        <div className="mb-6 border border-gold bg-white/80 p-4 text-sm">
-          <p className="font-cinzel text-xs tracking-wider uppercase text-oxblood mb-1">
+        <div className="mb-6 velvet-inset p-4 text-sm">
+          <p className="font-cinzel text-xs tracking-wider uppercase text-gold mb-1">
             Local Preview Mode (DATABASE_URL not set)
           </p>
-          <p className="text-nearblack/85">
+          <p className="text-parchment/80">
             Sign in with default local preview credentials:{" "}
-            <code className="bg-cream px-1.5 py-0.5 font-mono text-xs">admin@oxblood.local</code> /{" "}
-            <code className="bg-cream px-1.5 py-0.5 font-mono text-xs">OxbloodAdmin!2026</code>
+            <code className="bg-nearblack px-1.5 py-0.5 font-mono text-xs text-gold">admin@oxblood.local</code> /{" "}
+            <code className="bg-nearblack px-1.5 py-0.5 font-mono text-xs text-gold">OxbloodAdmin!2026</code>
           </p>
         </div>
       )}
 
-      <form action={loginAction} className="grid gap-5 bg-white p-8 border-t-4 border-oxblood shadow-sm">
+      <form action={loginAction} className="grid gap-5 velvet-card p-8">
         <label className="block">
           <span className="block font-cinzel text-xs tracking-widest uppercase mb-2">
             Email Address
@@ -63,7 +63,7 @@ export default async function AdminLogin({
             required
             defaultValue={isDevFallback ? "admin@oxblood.local" : ""}
             placeholder="admin@your-domain.com"
-            className="block w-full border border-nearblack/25 bg-cream/30 px-3.5 py-3 text-base focus:border-oxblood focus:outline-none"
+            className="block w-full border border-gold/30 bg-nearblack/60 px-3.5 py-3 text-base text-parchment placeholder:text-parchment/35 focus:border-gold focus:outline-none"
           />
         </label>
 
@@ -77,12 +77,12 @@ export default async function AdminLogin({
             required
             defaultValue={isDevFallback ? "OxbloodAdmin!2026" : ""}
             placeholder="••••••••••••"
-            className="block w-full border border-nearblack/25 bg-cream/30 px-3.5 py-3 text-base focus:border-oxblood focus:outline-none"
+            className="block w-full border border-gold/30 bg-nearblack/60 px-3.5 py-3 text-base text-parchment placeholder:text-parchment/35 focus:border-gold focus:outline-none"
           />
         </label>
 
         <button
-          className="btn-gold border-0 cursor-pointer text-center mt-2 w-full"
+          className="cta-bar cursor-pointer mt-2"
           type="submit"
         >
           SIGN IN TO DASHBOARD

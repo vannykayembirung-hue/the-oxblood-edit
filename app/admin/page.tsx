@@ -74,7 +74,7 @@ export default async function AdminDashboard({
   const errorText = searchParams?.error ? ERROR_MESSAGES[searchParams.error] : null;
 
   return (
-    <div className="px-[6%] py-12 min-h-[75vh] max-w-7xl mx-auto">
+    <div className="px-[6%] py-12 min-h-screen bg-cream text-nearblack max-w-7xl mx-auto">
       {/* Top header */}
       <div className="flex flex-wrap items-center justify-between gap-4 pb-6 border-b border-nearblack/15">
         <div>

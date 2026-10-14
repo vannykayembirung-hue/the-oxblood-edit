@@ -1,85 +1,394 @@
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ------------------------------------------------------------------ *
+ * THE OXBLOOD EDIT — "Dark Elegance" design tokens
+ * Ink:      #0B0A08   (general background, dark velvet ground)
+ * Velvet:   #120F0D   (smoky velvet cards)
+ * Oxblood:  #6E1423   (CTA bars, halo, accents)
+ * Gold:     #C6A15B   (antique gold hairlines, double seal rings)
+ * Parchment:#EDE4D0   (body copy)
+ * ------------------------------------------------------------------ */
+
 :root {
-  color-scheme: light;
+  color-scheme: dark;
+  --ink: #0b0a08;
+  --velvet: #120f0d;
+  --velvet-soft: #1a1613;
+  --oxblood: #6e1423;
+  --oxblood-halo: rgba(110, 20, 35, 0.22);
+  --gold: #c6a15b;
+  --parchment: #ede4d0;
 }
 
-* {
-  box-sizing: border-box;
+html {
+  background-color: var(--ink);
+  scroll-behavior: smooth;
 }
 
 body {
   margin: 0;
-  background: #EDE4D0;
-  color: #0B0A08;
+  min-height: 100vh;
+  color: var(--parchment);
+  background-color: var(--ink);
+  background-image:
+    radial-gradient(1100px 620px at 50% -12%, var(--oxblood-halo), rgba(11, 10, 8, 0) 72%),
+    radial-gradient(820px 520px at 6% 82%, rgba(110, 20, 35, 0.14), rgba(11, 10, 8, 0) 74%),
+    radial-gradient(680px 460px at 96% 26%, rgba(198, 161, 91, 0.07), rgba(11, 10, 8, 0) 70%);
+  background-attachment: fixed;
   font-family: 'Cormorant Garamond', Georgia, serif;
-  line-height: 1.6;
+  font-size: 17px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 h1, h2, h3, h4 {
   font-family: 'Cinzel', Georgia, serif;
-  letter-spacing: 0.04em;
-  line-height: 1.2;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  line-height: 1.18;
+  color: var(--parchment);
 }
 
 a {
   color: inherit;
 }
 
-.btn-gold {
-  background: #C6A15B;
-  color: #0B0A08;
+::selection {
+  background: rgba(110, 20, 35, 0.55);
+  color: var(--parchment);
+}
+
+/* ----------------------------- primitives ----------------------------- */
+
+.eyebrow {
   font-family: 'Cinzel', Georgia, serif;
-  padding: 14px 24px;
-  display: inline-block;
-  font-size: 12px;
-  letter-spacing: 0.08em;
+  font-size: 0.7rem;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.hairline {
+  height: 1px;
+  border: 0;
+  background: linear-gradient(90deg, rgba(198, 161, 91, 0), rgba(198, 161, 91, 0.55), rgba(198, 161, 91, 0));
+}
+
+.velvet-card {
+  position: relative;
+  background:
+    linear-gradient(158deg, rgba(198, 161, 91, 0.09) 0%, rgba(198, 161, 91, 0) 42%),
+    var(--velvet);
+  border: 1px solid rgba(198, 161, 91, 0.3);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(237, 228, 208, 0.05);
+}
+
+.velvet-card--rule::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: linear-gradient(90deg, rgba(110, 20, 35, 0.9), var(--gold) 65%, rgba(198, 161, 91, 0.1));
+}
+
+.velvet-inset {
+  background: rgba(11, 10, 8, 0.6);
+  border: 1px solid rgba(198, 161, 91, 0.18);
+}
+
+/* --------------------------- CTAs: oxblood ---------------------------- */
+
+/* Full-width oxblood CTA bar with spaced Cinzel type. */
+.cta-bar {
+  display: block;
+  width: 100%;
+  padding: 20px 24px;
+  background: linear-gradient(90deg, #4c0e18 0%, var(--oxblood) 42%, #7d1a2b 100%);
+  color: var(--parchment);
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  text-align: center;
   text-decoration: none;
-  transition: background-color 0.2s ease;
+  border-top: 1px solid rgba(198, 161, 91, 0.45);
+  border-bottom: 1px solid rgba(198, 161, 91, 0.45);
+  transition: filter 0.2s ease, letter-spacing 0.2s ease;
+  cursor: pointer;
+}
+
+.cta-bar:hover,
+.cta-bar:focus-visible {
+  filter: brightness(1.16);
+  letter-spacing: 0.34em;
+}
+
+.btn-oxblood {
+  display: inline-block;
+  padding: 15px 30px;
+  background: linear-gradient(100deg, #4c0e18, var(--oxblood) 60%, #7a1728);
+  color: var(--parchment);
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: 0.72rem;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  text-decoration: none;
+  border: 1px solid rgba(198, 161, 91, 0.42);
+  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.btn-oxblood:hover,
+.btn-oxblood:focus-visible {
+  border-color: var(--gold);
+  background: var(--oxblood);
+  transform: translateY(-1px);
+}
+
+.btn-gold {
+  background: var(--gold);
+  color: #14100c;
+  font-family: 'Cinzel', Georgia, serif;
+  padding: 15px 28px;
+  display: inline-block;
+  font-size: 0.72rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  text-decoration: none;
+  border: 1px solid var(--gold);
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .btn-gold:hover {
-  background: #b8924a;
+  background: #d4b173;
 }
+
+.btn-ghost {
+  display: inline-block;
+  padding: 14px 26px;
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: 0.7rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--parchment);
+  border: 1px solid rgba(198, 161, 91, 0.5);
+  background: rgba(18, 15, 13, 0.6);
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.btn-ghost:hover {
+  border-color: var(--gold);
+  background: rgba(110, 20, 35, 0.28);
+}
+
+/* ---------------------- 16:9 editorial visuals ------------------------ */
+
+/* Every editorial frame is strictly 16:9 (aspect-video) with a gold hairline. */
+.frame-16x9 {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: #0e0c0a;
+  border: 1px solid rgba(198, 161, 91, 0.32);
+}
+
+.frame-16x9 img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  filter: saturate(0.92) contrast(1.04);
+}
+
+.frame-16x9::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(110, 20, 35, 0.14), rgba(11, 10, 8, 0) 60%),
+    linear-gradient(180deg, rgba(11, 10, 8, 0) 55%, rgba(11, 10, 8, 0.6) 100%);
+}
+
+/* ------------------------------ editorial ----------------------------- */
 
 .editorial-prose {
   font-size: 1.25rem;
-  line-height: 1.75;
+  line-height: 1.78;
+  color: rgba(237, 228, 208, 0.92);
 }
 
 .editorial-prose h2 {
-  font-size: 1.65rem;
-  margin-top: 2.25rem;
-  margin-bottom: 0.75rem;
-  color: #6E1423;
+  font-size: 1.7rem;
+  margin-top: 2.5rem;
+  margin-bottom: 0.85rem;
+  color: var(--parchment);
 }
 
 .editorial-prose h3 {
-  font-size: 1.3rem;
-  margin-top: 1.75rem;
-  margin-bottom: 0.5rem;
+  font-size: 1.32rem;
+  margin-top: 1.9rem;
+  margin-bottom: 0.55rem;
+  color: rgba(237, 228, 208, 0.9);
 }
 
 .editorial-prose p {
   margin-bottom: 1.25rem;
 }
 
+.editorial-prose strong {
+  color: var(--parchment);
+  font-weight: 600;
+}
+
+.editorial-prose a {
+  color: var(--gold);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .editorial-prose ul,
 .editorial-prose ol {
-  margin: 1rem 0 1.5rem 1.5rem;
+  margin: 1rem 0 1.5rem 1.4rem;
 }
 
 .editorial-prose li {
   margin-bottom: 0.5rem;
 }
 
+.editorial-prose li::marker {
+  color: var(--oxblood);
+}
+
 .editorial-prose blockquote {
-  border-left: 3px solid #C6A15B;
-  padding-left: 1.25rem;
-  margin: 1.75rem 0;
+  border-left: 2px solid var(--gold);
+  background: linear-gradient(90deg, rgba(110, 20, 35, 0.2), rgba(110, 20, 35, 0));
+  padding: 1rem 1.4rem;
+  margin: 2rem 0;
   font-style: italic;
-  color: #6E1423;
+  font-size: 1.35rem;
+  color: var(--parchment);
+}
+
+.editorial-prose blockquote p {
+  margin: 0;
+}
+
+.editorial-prose figure {
+  margin: 2.6rem 0;
+}
+
+.editorial-prose figure img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  display: block;
+  background: #0e0c0a;
+  border: 1px solid rgba(198, 161, 91, 0.32);
+  filter: saturate(0.92) contrast(1.04);
+}
+
+.editorial-prose figcaption {
+  margin-top: 0.9rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(198, 161, 91, 0.22);
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(237, 228, 208, 0.6);
+}
+
+.editorial-prose hr {
+  border: 0;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(198, 161, 91, 0), rgba(198, 161, 91, 0.45), rgba(198, 161, 91, 0));
+  margin: 2.5rem 0;
+}
+
+.plate {
+  margin: 0;
+}
+
+/* Standalone plates (outside .editorial-prose) keep the strict 16:9 crop. */
+.plate img,
+img.plate-img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  display: block;
+}
+
+.plate figcaption {
+  margin-top: 0.8rem;
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(237, 228, 208, 0.58);
+}
+
+/* -------------------------------- quiz -------------------------------- */
+
+.quiz-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 18px 20px;
+  color: rgba(237, 228, 208, 0.88);
+  background: linear-gradient(158deg, rgba(198, 161, 91, 0.06), rgba(11, 10, 8, 0.5));
+  border: 1px solid rgba(198, 161, 91, 0.24);
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 1.15rem;
+  line-height: 1.45;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background-color 0.18s ease, transform 0.18s ease, color 0.18s ease;
+}
+
+.quiz-option:hover,
+.quiz-option:focus-visible {
+  outline: none;
+  color: var(--parchment);
+  border-color: var(--gold);
+  background: linear-gradient(158deg, rgba(110, 20, 35, 0.4), rgba(11, 10, 8, 0.72));
+  transform: translateY(-1px);
+}
+
+.quiz-option[data-selected="true"] {
+  border-color: var(--gold);
+  background: linear-gradient(100deg, #4c0e18, var(--oxblood) 70%);
+  color: var(--parchment);
+}
+
+.quiz-meter {
+  height: 2px;
+  background: rgba(198, 161, 91, 0.18);
+  position: relative;
+  overflow: hidden;
+}
+
+.quiz-meter > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: linear-gradient(90deg, var(--oxblood), var(--gold));
+  transition: width 0.35s ease;
+}
+
+.quiz-bar {
+  height: 6px;
+  background: rgba(198, 161, 91, 0.14);
+  border: 1px solid rgba(198, 161, 91, 0.18);
+}
+
+.quiz-bar > span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--oxblood), var(--gold));
 }
