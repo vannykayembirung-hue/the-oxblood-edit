@@ -2,6 +2,8 @@
 
 import { auth, signIn, signOut } from "@/lib/auth";
 import {
+  syncSeedCatalog,
+  addSubscriberAdmin,
   saveArticle,
   setArticleStatus,
   deleteArticleById,
@@ -12,6 +14,8 @@ import {
   deleteSubscriberById
 } from "@/lib/db";
 import { isSafeHttpUrl } from "@/lib/sanitize";
+import { isCrmSegment } from "@/lib/admin-crm";
+import { isValidEmail, normalizeEmail, isArchetypeKey } from "@/lib/newsletter";
 import { PRODUCT_SEEDS, isProductSlug } from "@/lib/products";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -32,6 +36,7 @@ function revalidateAllEditorialPaths(slug?: string) {
     revalidatePath(`/journal/${slug}`);
   }
   revalidatePath("/shop/the-oxblood-code");
+  revalidatePath("/sitemap.xml");
   revalidatePath("/journal/[slug]", "page");
   revalidatePath("/admin");
 }
@@ -236,4 +241,29 @@ export async function deleteSubscriberAction(formData: FormData) {
   }
 
   redirect("/admin?tab=subscribers&notice=subscriber-erased");
+}
+
+export async function syncCatalogAction() {
+  await requireAdminSession();
+  try {
+    await syncSeedCatalog();
+  } catch (error) {
+    console.error("Catalog synchronization failed:", error);
+    redirect("/admin?error=sync-failed");
+  }
+  revalidateAllEditorialPaths();
+  redirect("/admin?notice=catalog-synced");
+}
+
+export async function addSubscriberAdminAction(formData: FormData) {
+  await requireAdminSession();
+  const email = normalizeEmail(formData.get("email"));
+  const archetype = String(formData.get("archetype") || "dispatch");
+  const source = String(formData.get("source") || "").trim();
+  if (!isValidEmail(email) || (!isCrmSegment(archetype) && !isArchetypeKey(archetype)) || !source || source.length > 100) {
+    redirect("/admin?tab=subscribers&error=invalid-subscriber");
+  }
+  await addSubscriberAdmin({ email, archetype, source });
+  revalidatePath("/admin");
+  redirect("/admin?tab=subscribers&notice=subscriber-added");
 }

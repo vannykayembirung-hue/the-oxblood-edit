@@ -1,3 +1,4 @@
+import { canonicalArchetype, isCrmSegment } from "@/lib/admin-crm";
 import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 import * as schema from "@/drizzle/schema";
@@ -6,7 +7,9 @@ import { normalizeCategory } from "@/lib/editorial-taxonomy";
 import {
   NEWSLETTER_CONSENT_TEXT,
   NEWSLETTER_CONSENT_VERSION,
-  normalizeEmail
+  normalizeEmail,
+  isValidEmail,
+  isArchetypeKey
 } from "@/lib/newsletter";
 import { createToken } from "@/lib/newsletter-server";
 import {
@@ -407,8 +410,8 @@ const DEFAULT_SEED_DATA: LocalStoreData = {
       url: "https://www.net-a-porter.com/",
       price_us: "$690",
       price_uk: "£560",
-      image: null,
-      clicks: 18
+      image: EDITORIAL_PLATES.britishLayers.src,
+      clicks: 0
     },
     {
       id: "c1000000-0000-4000-8000-000000000002",
@@ -417,8 +420,8 @@ const DEFAULT_SEED_DATA: LocalStoreData = {
       url: "https://www.thereformation.com/",
       price_us: "$298",
       price_uk: "£248",
-      image: null,
-      clicks: 24
+      image: EDITORIAL_PLATES.villainessDetail.src,
+      clicks: 0
     },
     {
       id: "c1000000-0000-4000-8000-000000000003",
@@ -427,14 +430,95 @@ const DEFAULT_SEED_DATA: LocalStoreData = {
       url: "https://www.russellandbromley.co.uk/",
       price_us: "$345",
       price_uk: "£275",
-      image: null,
-      clicks: 12
+      image: EDITORIAL_PLATES.capsuleWardrobe.src,
+      clicks: 0
+    },
+    {
+      id: "c1000000-0000-4000-8000-000000000004",
+      name: "Fine-Gauge Merino Turtleneck", merchant: "UNIQLO",
+      url: "https://www.uniqlo.com/", price_us: "$50", price_uk: "£35",
+      image: EDITORIAL_PLATES.britishLayers.src, clicks: 0
+    },
+    {
+      id: "c1000000-0000-4000-8000-000000000005",
+      name: "Black Velvet Evening Dress", merchant: "Reformation",
+      url: "https://www.thereformation.com/", price_us: "$278", price_uk: "£248",
+      image: EDITORIAL_PLATES.villainessHero.src, clicks: 0
+    },
+    {
+      id: "c1000000-0000-4000-8000-000000000006",
+      name: "Brass Taper Candle Holder", merchant: "Anthropologie",
+      url: "https://www.anthropologie.com/", price_us: "$38", price_uk: "£32",
+      image: EDITORIAL_PLATES.diningRoomInteriors.src, clicks: 0
     }
   ],
   // Never seeded with invented addresses: the Subscribers tab in `/admin` starts
   // empty and only ever shows consent records the desk actually collected.
   subscribers: []
 };
+
+for (const article of DEFAULT_SEED_DATA.articles) {
+  article.content_html = enrichArticleWithEditorialDefaults(article).content_html;
+  article.content_html += `<h2>Editorial notes &amp; further reading</h2><p>By Clara Vance, The Oxblood Edit. Read our <a href="/about">editorial desk profile</a> and <a href="/editorial-standards">review and affiliate disclosure standards</a>. UK and US price indications are not live quotes; check the retailer’s local listing, composition, size guide and return terms before purchasing.</p>`;
+}
+
+/** Explicit catalog upgrade: one atomic Neon transaction; never writes to a fallback store. */
+export async function syncSeedCatalog(): Promise<void> {
+  if (!sql) throw new Error("Neon DATABASE_URL is required for catalog synchronization.");
+  const queries = [
+    ...DEFAULT_SEED_DATA.articles.map((a) => sql!`
+      insert into articles (slug, title, excerpt, cover_image, content_html, meta_title, meta_description, category, status, created_at)
+      values (${a.slug}, ${a.title}, ${a.excerpt}, ${a.cover_image}, ${sanitizeEditorialHtml(a.content_html)}, ${a.meta_title}, ${a.meta_description}, ${a.category}, ${a.status}, ${a.created_at})
+      on conflict (slug) do update set title = excluded.title, excerpt = excluded.excerpt,
+        cover_image = excluded.cover_image, content_html = excluded.content_html,
+        meta_title = excluded.meta_title, meta_description = excluded.meta_description,
+        category = excluded.category, status = excluded.status, created_at = excluded.created_at
+    `),
+    ...DEFAULT_SEED_DATA.products.map((p) => sql!`
+      insert into products (slug, name, price, gumroad_url, description, what_inside)
+      values (${p.slug}, ${p.name}, ${p.price}, ${p.gumroad_url}, ${p.description}, ${p.what_inside})
+      on conflict (slug) do update set name = excluded.name, price = excluded.price,
+        gumroad_url = excluded.gumroad_url, description = excluded.description, what_inside = excluded.what_inside
+    `),
+    ...DEFAULT_SEED_DATA.affiliate_links.map((a) => sql!`
+      with existing as (
+        update affiliate_links set name = ${a.name}, merchant = ${a.merchant}, url = ${a.url},
+          price_us = ${a.price_us}, price_uk = ${a.price_uk}, image = ${a.image}
+        where id = ${a.id} or (name = ${a.name} and merchant = ${a.merchant})
+        returning id
+      )
+      insert into affiliate_links (id, name, merchant, url, price_us, price_uk, image, clicks)
+      select ${a.id}, ${a.name}, ${a.merchant}, ${a.url}, ${a.price_us}, ${a.price_uk}, ${a.image}, 0
+      where not exists (select 1 from existing)
+      on conflict (id) do update set name = excluded.name, merchant = excluded.merchant,
+        url = excluded.url, price_us = excluded.price_us, price_uk = excluded.price_uk, image = excluded.image
+    `)
+  ];
+  await sql.transaction(queries);
+}
+
+/** Manual VIP capture never fabricates consent or reactivates a suppressed address. */
+export async function addSubscriberAdmin(input: { email: string; archetype: string; source: string }): Promise<void> {
+  const email = normalizeEmail(input.email);
+  if (!isValidEmail(email) || (!isCrmSegment(input.archetype) && !isArchetypeKey(input.archetype)) || !input.source.trim() || input.source.length > 100) {
+    throw new Error("Invalid VIP contact");
+  }
+  const archetype = canonicalArchetype(input.archetype);
+  const source = input.source.trim();
+  const note = "Manually added by the editorial desk; newsletter consent not yet recorded.";
+  if (sql) {
+    await sql`insert into subscribers (email, archetype, source, status, consent_text, consent_version, confirm_token, unsubscribe_token)
+      values (${email}, ${archetype}, ${source}, 'pending', ${note}, 'admin-vip/pending', ${createToken()}, ${createToken()})
+      on conflict (email) do nothing`;
+    return;
+  }
+  const store = readLocalStore();
+  if (store.subscribers.some((s) => normalizeEmail(s.email) === email)) return;
+  store.subscribers.unshift({ id: crypto.randomUUID(), email, archetype, source, status: "pending",
+    consent_text: note, consent_version: "admin-vip/pending", consented_at: new Date().toISOString(),
+    confirmed_at: null, unsubscribed_at: null, confirm_token: createToken(), unsubscribe_token: createToken(), ip_hash: null });
+  writeLocalStore(store);
+}
 
 const LOCAL_STORE_PATH = path.join(process.cwd(), ".data", "local-store.json");
 

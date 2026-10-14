@@ -1,3 +1,4 @@
+import { csvCell, crmCsvCells } from "@/lib/admin-csv";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getSubscribers } from "@/lib/db";
@@ -7,12 +8,6 @@ import { isArchetypeKey } from "@/lib/newsletter";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-/** Escapes a value for RFC 4180 CSV output. */
-function csvCell(value: string | null): string {
-  const text = value ?? "";
-  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-}
-
 /**
  * GET /api/admin/subscribers/export — the editorial desk's own mailing list.
  *
@@ -20,14 +15,15 @@ function csvCell(value: string | null): string {
  * as well as the address: an editor importing this into a mail provider must be
  * able to show what each reader actually agreed to.
  */
-export async function GET() {
+export async function GET(request: Request) {
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ ok: false, code: "unauthorized" }, { status: 401 });
   }
 
   const subscribers = await getSubscribers();
-  const header = [
+  const crm = new URL(request.url).searchParams.get("format") === "crm";
+  const header = crm ? ["email", "archetype", "source", "created_at"] : [
     "email",
     "archetype",
     "archetype_name",
@@ -45,7 +41,7 @@ export async function GET() {
       subscriber.archetype && isArchetypeKey(subscriber.archetype)
         ? ARCHETYPES[subscriber.archetype].name
         : "";
-    return [
+    const cells = crm ? crmCsvCells(subscriber) : [
       subscriber.email,
       subscriber.archetype,
       archetypeName,
@@ -56,12 +52,13 @@ export async function GET() {
       subscriber.unsubscribed_at,
       subscriber.consent_version,
       subscriber.consent_text
-    ]
+    ];
+    return cells
       .map(csvCell)
       .join(",");
   });
 
-  const csv = `${header.join(",")}\n${rows.join("\n")}\n`;
+  const csv = `${header.join(",")}\r\n${rows.join("\r\n")}\r\n`;
   const stamp = new Date().toISOString().slice(0, 10);
 
   return new NextResponse(csv, {

@@ -20,6 +20,8 @@ import {
 import { isArchetypeKey } from "@/lib/newsletter";
 import { EDITORIAL_CATEGORIES, getCategoryLabel } from "@/lib/editorial-taxonomy";
 import {
+  syncCatalogAction,
+  addSubscriberAdminAction,
   logoutAction,
   saveArticleAction,
   toggleArticleStatusAction,
@@ -32,9 +34,15 @@ import {
 } from "@/app/admin/actions";
 import ImageUploadField from "@/components/ImageUploadField";
 
+import { CRM_SEGMENTS, contactSegment } from "@/lib/admin-crm";
+import { auditArticle } from "@/lib/admin-seo";
+import { CatalogSyncButton, CopyPinterestUtmButton, SubscriberCrmToolbar } from "@/components/AdminCrmTools";
+
 export const dynamic = "force-dynamic";
 
 const NOTICE_MESSAGES: Record<string, string> = {
+  "catalog-synced": "Neon upgraded: 9 complete articles, 2 Gumroad products and 6 affiliate pieces. Clicks and CRM contacts preserved.",
+  "subscriber-added": "VIP contact added as pending. Existing contacts and consent states are unchanged.",
   "article-saved": "Article saved and published paths revalidated.",
   "status-updated": "Article publication status updated.",
   "article-deleted": "Article removed from the catalog.",
@@ -48,6 +56,8 @@ const NOTICE_MESSAGES: Record<string, string> = {
 };
 
 const ERROR_MESSAGES: Record<string, string> = {
+  "sync-failed": "Neon synchronization failed. Check DATABASE_URL and the database schema. No partial catalog update was applied.",
+  "invalid-subscriber": "Provide a valid email, archetype and source (100 characters maximum).",
   "missing-title": "Article title is required.",
   "invalid-gumroad-url": "Gumroad URL must be a valid http:// or https:// URL.",
   "unknown-product": "Unknown product — only the two Gumroad editions can be edited here.",
@@ -59,6 +69,7 @@ export default async function AdminDashboard({
 }: {
   searchParams?: {
     tab?: string;
+    segment?: string;
     product?: string;
     edit?: string;
     editAffiliate?: string;
@@ -80,7 +91,19 @@ export default async function AdminDashboard({
   ]);
 
   const publishedCount = articles.filter((a) => a.status === "published").length;
-  const draftCount = articles.filter((a) => a.status === "draft").length;
+  const audits = new Map(articles.map((article) => [article.id, auditArticle(article)]));
+  const published = articles.filter((a) => a.status === "published");
+  const totalWords = published.reduce((sum, a) => sum + audits.get(a.id)!.words, 0);
+  const totalFigures = published.reduce((sum, a) => sum + audits.get(a.id)!.figures, 0);
+  const averageSeo = articles.length ? Math.round([...audits.values()].reduce((sum, a) => sum + a.score, 0) / articles.length) : 0;
+  const quizCount = subscribers.filter((s) => s.source === "villainess-quiz" || contactSegment(s.archetype) !== "dispatch").length;
+  const segments = ["widow", "siren", "heiress", "muse", "dispatch"] as const;
+  const segment = segments.find((value) => value === searchParams?.segment);
+  const inSegment = (archetype: string | null, key: string) => contactSegment(archetype) === key;
+  const filteredSubscribers = segment ? subscribers.filter((s) => inSegment(s.archetype, segment)) : subscribers;
+  const latestArticle = [...published].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0];
+  const leaderboard = [...affiliateLinks].sort((a, b) => b.clicks - a.clicks);
+  const maxClicks = Math.max(1, ...leaderboard.map((a) => a.clicks));
   const totalClicks = affiliateLinks.reduce((sum, item) => sum + (item.clicks || 0), 0);
 
   const activeTab = searchParams?.tab || (searchParams?.edit ? "editor" : "articles");
@@ -143,41 +166,26 @@ export default async function AdminDashboard({
         </div>
       )}
 
+      <section className={`mt-6 p-5 border ${articles.length < 9 ? "border-oxblood bg-oxblood/10" : "border-gold bg-white"}`} aria-label="Catalog synchronization">
+        {articles.length < 9 && <p role="alert" className="font-semibold mb-3">Incomplete catalog: {articles.length}/9 pillar articles. Upgrade in one click.</p>}
+        <form action={syncCatalogAction}><CatalogSyncButton enabled={hasDatabaseUrl} /></form>
+        <p className="text-xs mt-3">Restores the seeded editorial entries and staggered publication dates. Replaces edits to these entries; keeps click counts and contacts. {!hasDatabaseUrl && "Configure DATABASE_URL to enable Neon synchronization."}</p>
+      </section>
+
       {/* KPI Metrics */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mt-8">
-        <div className="bg-white p-6 border-t-4 border-gold shadow-sm">
-          <p className="font-cinzel text-xs tracking-widest text-nearblack/70 uppercase">
-            Published Stories
-          </p>
-          <strong className="text-4xl font-cinzel block mt-2">{publishedCount}</strong>
-        </div>
-        <div className="bg-white p-6 border-t-4 border-oxblood shadow-sm">
-          <p className="font-cinzel text-xs tracking-widest text-nearblack/70 uppercase">
-            Drafts in Queue
-          </p>
-          <strong className="text-4xl font-cinzel block mt-2">{draftCount}</strong>
-        </div>
-        <div className="bg-white p-6 border-t-4 border-nearblack shadow-sm">
-          <p className="font-cinzel text-xs tracking-widest text-nearblack/70 uppercase">
-            Affiliate Pieces
-          </p>
-          <strong className="text-4xl font-cinzel block mt-2">{affiliateLinks.length}</strong>
-        </div>
-        <div className="bg-white p-6 border-t-4 border-gold shadow-sm">
-          <p className="font-cinzel text-xs tracking-widest text-nearblack/70 uppercase">
-            Tracked Outbound Clicks
-          </p>
-          <strong className="text-4xl font-cinzel block mt-2">{totalClicks}</strong>
-        </div>
-        <div className="bg-white p-6 border-t-4 border-oxblood shadow-sm">
-          <p className="font-cinzel text-xs tracking-widest text-nearblack/70 uppercase">
-            Dispatch Subscribers
-          </p>
-          <strong className="text-4xl font-cinzel block mt-2">{subscriberStats.total}</strong>
-          <p className="text-xs text-nearblack/60 mt-1">
-            {subscriberStats.confirmed} confirmed · {subscriberStats.pending} pending
-          </p>
-        </div>
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 mt-8">
+        {[
+          { label: "Published chapters", value: publishedCount, detail: `${totalWords.toLocaleString("en-GB")} words · ${totalFigures} 16:9 figures` },
+          { label: "Average SEO health", value: `${averageSeo}%`, detail: "Editorial completeness heuristic, not a Google score" },
+          { label: "Gumroad products", value: products.length, detail: "$27 · $19 / £15 editions" },
+          { label: "UK / US affiliate pieces", value: affiliateLinks.length, detail: "£ GBP / $ USD" },
+          { label: "Affiliate outbound clicks", value: totalClicks, detail: "Includes tracked test clicks" },
+          { label: "CRM contacts", value: subscriberStats.total, detail: `${quizCount} Quiz · ${subscribers.length - quizCount} Dispatch` }
+        ].map((kpi) => <div key={kpi.label} className="bg-white p-4 border-t-4 border-oxblood shadow-sm">
+          <p className="font-cinzel text-xs uppercase text-nearblack/70">{kpi.label}</p>
+          <strong className="text-3xl block mt-2">{kpi.value}</strong>
+          <p className="text-xs mt-2 text-nearblack/70">{kpi.detail}</p>
+        </div>)}
       </div>
 
       {/* Navigation Tabs */}
@@ -241,7 +249,7 @@ export default async function AdminDashboard({
             <div>
               <h2 className="text-2xl">Editorial Stories</h2>
               <p className="text-nearblack/75">
-                Publish, unpublish, edit, or delete journal articles.
+                Publish, unpublish, edit, or delete journal articles. SEO audit: title, slug, cover, metadata length (20–65 / 80–160), 300+ words, 2+ 16:9 figures, 2+ internal links, headings and image alt text (10 points each).
               </p>
             </div>
             <Link href="/admin?tab=editor" className="btn-gold">
@@ -254,6 +262,7 @@ export default async function AdminDashboard({
               <thead>
                 <tr className="border-b border-nearblack/15 bg-nearblack text-cream font-cinzel text-xs tracking-wider uppercase">
                   <th className="py-3.5 px-4">Title &amp; Slug</th>
+                  <th className="py-3.5 px-4">SEO Audit</th>
                   <th className="py-3.5 px-4">Category</th>
                   <th className="py-3.5 px-4">Status</th>
                   <th className="py-3.5 px-4 text-right">Actions</th>
@@ -262,9 +271,11 @@ export default async function AdminDashboard({
               <tbody className="divide-y divide-nearblack/10">
                 {articles.map((article) => {
                   const isPublished = article.status === "published";
+                  const audit = audits.get(article.id)!;
                   return (
                     <tr key={article.id} className="hover:bg-cream/30">
                       <td className="py-4 px-4">
+                        {article.cover_image && <img src={article.cover_image} alt={article.title} loading="lazy" className="aspect-video w-40 object-cover mb-3" />}
                         <p className="font-semibold text-lg leading-snug">{article.title}</p>
                         <p className="text-sm text-nearblack/60 font-mono">/journal/{article.slug}</p>
                         {article.excerpt && (
@@ -272,6 +283,10 @@ export default async function AdminDashboard({
                             {article.excerpt}
                           </p>
                         )}
+                      </td>
+                      <td className="py-4 px-4 text-sm">
+                        <strong className="text-oxblood">{audit.score}%</strong>
+                        <p>{audit.words} words</p><p>{audit.figures} figures 16:9</p><p>{audit.internalLinks} internal links</p>
                       </td>
                       <td className="py-4 px-4">
                         <span className="font-cinzel text-xs uppercase tracking-widest px-2.5 py-1 bg-cream border border-gold/50">
@@ -291,6 +306,7 @@ export default async function AdminDashboard({
                       </td>
                       <td className="py-4 px-4">
                         <div className="flex flex-wrap items-center justify-end gap-2">
+                          <CopyPinterestUtmButton slug={article.slug} category={article.category} />
                           <form action={toggleArticleStatusAction}>
                             <input type="hidden" name="id" value={article.id} />
                             <input type="hidden" name="slug" value={article.slug} />
@@ -340,7 +356,7 @@ export default async function AdminDashboard({
                 })}
                 {articles.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="py-8 text-center text-nearblack/70">
+                    <td colSpan={5} className="py-8 text-center text-nearblack/70">
                       No editorial articles yet. Click &ldquo;+ Write New Article&rdquo; to create your first story.
                     </td>
                   </tr>
@@ -674,6 +690,17 @@ export default async function AdminDashboard({
               Outbound clicks are tracked via <code className="text-xs">/api/affiliate/[id]</code>.
             </p>
 
+            <section aria-label="UK and US affiliate leaderboard" className="bg-white border border-gold p-5 mb-5">
+              <h3 className="text-xl mb-3">UK (£) / US ($) Click Leaderboard</h3>
+              <p className="text-xs mb-3">Illustrative editorial plates and indicative prices. Seed links point to merchant homepages; replace with approved affiliate product URLs before promotion.</p>
+              {leaderboard.map((item) => <div key={item.id} className="mb-4">
+                <div className="flex justify-between gap-3 text-sm"><span>{item.name} · {item.price_uk} / {item.price_us}</span><strong>{item.clicks} clicks</strong></div>
+                <div role="progressbar" aria-label={`${item.name} clicks relative to leader`} aria-valuemin={0} aria-valuemax={maxClicks} aria-valuenow={item.clicks} className="bg-cream h-3 mt-2">
+                  <div className="bg-oxblood h-3" style={{ width: `${item.clicks / maxClicks * 100}%` }} />
+                </div>
+              </div>)}
+              {leaderboard.length === 0 && <p>No affiliate pieces yet.</p>}
+            </section>
             <div className="bg-white border border-nearblack/15 shadow-sm overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -688,6 +715,7 @@ export default async function AdminDashboard({
                   {affiliateLinks.map((item) => (
                     <tr key={item.id} className="hover:bg-cream/30">
                       <td className="py-3.5 px-4">
+                        {item.image && <img src={item.image} alt={item.name} loading="lazy" className="aspect-video w-32 object-cover mb-2" />}
                         <p className="font-semibold">{item.name}</p>
                         <p className="text-xs uppercase tracking-wider text-oxblood">
                           {item.merchant}
@@ -699,6 +727,7 @@ export default async function AdminDashboard({
                       <td className="py-3.5 px-4 font-cinzel font-semibold">{item.clicks}</td>
                       <td className="py-3.5 px-4">
                         <div className="flex items-center justify-end gap-2">
+                          <a href={`/api/affiliate/${item.id}`} target="_blank" rel="noopener noreferrer" className="text-xs underline" title="Records a tracked outbound click">Test ↗</a>
                           <Link
                             href={`/admin?tab=affiliates&editAffiliate=${item.id}`}
                             className="px-2.5 py-1 font-cinzel text-xs uppercase border border-nearblack/30 bg-white hover:bg-gold no-underline"
@@ -845,13 +874,25 @@ export default async function AdminDashboard({
                 confirmation link is opened.
               </p>
             </div>
-            <a
-              href="/api/admin/subscribers/export"
-              className="btn-gold no-underline"
-            >
-              EXPORT CSV
-            </a>
           </div>
+          <SubscriberCrmToolbar emails={subscribers.map((s) => s.email)} latestArticle={latestArticle ? { title: latestArticle.title, slug: latestArticle.slug, excerpt: latestArticle.excerpt } : null} />
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-5">
+            {segments.map((key) => <Link key={key} href={`/admin?tab=subscribers${segment === key ? "" : `&segment=${key}`}`} aria-current={segment === key ? "page" : undefined} className={`p-4 border no-underline ${segment === key ? "bg-oxblood text-cream border-oxblood" : "bg-white border-gold text-nearblack"}`}>
+              <span className="block uppercase text-xs">{CRM_SEGMENTS[key] ? ARCHETYPES[CRM_SEGMENTS[key]!].name : "Dispatch"}</span>
+              <strong className="text-2xl">{subscribers.filter((s) => inSegment(s.archetype, key)).length}</strong>
+            </Link>)}
+          </div>
+          <p className="text-sm mb-4">{segment ? `Filtered by ${segment}` : "All contacts"} · {filteredSubscribers.length} contacts <Link href="/admin?tab=subscribers" className="underline ml-3">Clear filter</Link></p>
+          <form action={addSubscriberAdminAction} className="bg-white border border-nearblack/15 p-5 mb-7">
+            <h3 className="text-xl mb-3">Add a VIP contact</h3>
+            <div className="grid md:grid-cols-3 gap-4">
+              <label>Email<input type="email" name="email" required maxLength={254} className="block w-full border p-2" /></label>
+              <label>Archetype<select name="archetype" defaultValue="dispatch" className="block w-full border p-2">{segments.map((key) => <option key={key} value={key}>{key}</option>)}</select></label>
+              <label>Source<input name="source" required maxLength={100} defaultValue="admin-vip" className="block w-full border p-2" /></label>
+            </div>
+            <p className="text-xs my-3">Added as pending, with no newsletter consent asserted. Duplicate emails leave the existing contact untouched.</p>
+            <button type="submit" className="btn-gold">Add VIP contact</button>
+          </form>
 
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-7">
             <div className="bg-white p-5 border-t-4 border-nearblack shadow-sm">
@@ -926,7 +967,7 @@ export default async function AdminDashboard({
                 </tr>
               </thead>
               <tbody className="divide-y divide-nearblack/10">
-                {subscribers.map((subscriber) => {
+                {filteredSubscribers.map((subscriber) => {
                   const isConfirmed = subscriber.status === "confirmed";
                   const isWithdrawn = subscriber.status === "unsubscribed";
                   return (
@@ -1015,11 +1056,10 @@ export default async function AdminDashboard({
                     </tr>
                   );
                 })}
-                {subscribers.length === 0 && (
+                {filteredSubscribers.length === 0 && (
                   <tr>
                     <td colSpan={6} className="py-6 text-center text-nearblack/70">
-                      No subscribers yet. Captures land here from the quiz dossier, the homepage and
-                      the footer, each with its consent wording on file.
+                      No contacts in this segment. Clear the filter or add a VIP contact.
                     </td>
                   </tr>
                 )}
