@@ -14,6 +14,47 @@ A luxury editorial publication and CMS built with Next.js 14 (App Router), Neon 
   - **Affiliate Curation & Click Tracking**: Add, edit, and delete US/UK affiliate pieces with outbound click tracking via `/api/affiliate/[id]`.
 - **Hardened Image Upload API (`/api/upload`)**: Authenticated endpoint enforcing MIME type allowlists, extension matching, and binary magic-byte signature verification (JPEG, PNG, WEBP, GIF, AVIF up to 10 MB).
 
+## Dark Elegance branding (velvet & oxblood)
+
+The whole site — `/`, `/quiz`, `/journal`, `/journal/[slug]`, `/shop/the-oxblood-code`, `/about`,
+`/disclosure` — runs on the Dark Elegance theme:
+
+| Token | Value | Use |
+| --- | --- | --- |
+| Ink | `#0B0A08` | page background |
+| Oxblood halo | `rgba(110, 20, 35, 0.22)` | radial glow behind the hero |
+| Smoky velvet | `#120F0D` | every card surface (no `bg-white` cards on public pages) |
+| Antique gold | `#C6A15B` | hairlines, borders, plate captions |
+| Parchment | `#EDE4D0` | body copy |
+
+- `components/WaxSeal.tsx` — inline SVG house seal: scalloped oxblood wax, double antique-gold ring,
+  `OE` monogram in Cinzel.
+- `components/VillainessQuiz.tsx` + `app/quiz/page.tsx` — **“Which Villainess Are You? · Six questions,
+  one verdict.”** Four archetypes: *The Velvet Widow*, *The Library Siren*, *The Crimson Heiress*,
+  *The Thorned Muse*. The data model lives in `lib/villainess-quiz.ts` so the `/quiz` page can render the
+  four verdicts server-side.
+- Full-width CTA bars (`.cta-bar`) are oxblood with spaced Cinzel capitals; secondary buttons are
+  `.btn-oxblood` / `.btn-ghost`.
+- `/admin` intentionally keeps a light “desk” surface so the manuscript forms stay readable.
+
+## 16:9 editorial visuals
+
+Every article is photographed and framed at a strict 16:9 (`aspect-video`):
+
+1. Eight editorial photographs live in `public/images/editorial/` (1920×1080, no overlaid text):
+   `villainess-hero`, `villainess-detail`, `british-autumn`, `capsule-wardrobe`, `beauty-kohl-lips`,
+   `british-layers`, `fibre-label-atelier`, `dining-room-interiors` — all suffixed `-16x9.jpg`.
+2. `lib/sanitize.ts` allows `<figure>` / `<figcaption>` and forces `plate-img aspect-video` on every
+   image, so captions such as `PLATE I · …` survive the CMS round trip.
+3. `lib/db.ts` and `neon.sql` seed each article with a 16:9 `cover_image` **and** 1–2 in-body plates
+   (`<figure><img … /><figcaption>Plate I · …</figcaption></figure>`).
+4. `enrichArticleWithEditorialDefaults()` in `lib/db.ts` repairs legacy Neon rows on read: a missing,
+   empty or non-16:9 `cover_image` falls back to the curated 16:9 cover, and any body without its plates
+   (including rows that still say “Edit this article in the admin”) has its 16:9 figures re-injected.
+   Vercel Blob / remote covers uploaded from the admin are respected as-is.
+5. Re-running `neon.sql` is safe: the seed uses `on conflict (slug) do nothing`, and a trailing backfill
+   `update` restores covers and plates on rows created before this branding landed.
+
 ## Local Setup
 
 1. Install Node.js 20+.
