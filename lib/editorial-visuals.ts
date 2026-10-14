@@ -108,6 +108,15 @@ const LAYOUT_BY_SLUG: Record<string, ArticleEditorialLayout> = {
   "reading-the-fibre-label-in-a-dark-atelier": {
     cover: EDITORIAL_PLATES.fibreLabelAtelier,
     plates: [EDITORIAL_PLATES.fibreLabelAtelier, EDITORIAL_PLATES.capsuleWardrobe]
+  },
+  // Pillars VIII & IX — the US tail of the nine-story run and the fit file.
+  "the-us-oxblood-edit-american-autumn-tailoring": {
+    cover: EDITORIAL_PLATES.villainessHero,
+    plates: [EDITORIAL_PLATES.villainessHero, EDITORIAL_PLATES.capsuleWardrobe]
+  },
+  "the-fit-file-us-0-16-uk-4-20": {
+    cover: EDITORIAL_PLATES.fibreLabelAtelier,
+    plates: [EDITORIAL_PLATES.fibreLabelAtelier, EDITORIAL_PLATES.villainessDetail]
   }
 };
 

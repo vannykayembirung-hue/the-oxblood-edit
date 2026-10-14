@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import WaxSeal from "@/components/WaxSeal";
+import NewsletterCapture from "@/components/NewsletterCapture";
 import {
   ARCHETYPE_ORDER,
   ARCHETYPES,
@@ -160,6 +161,55 @@ export default function VillainessQuiz() {
               </p>
             )}
           </div>
+        </div>
+
+        {/* The dossier — promised by name, listed chapter by chapter, then sent. */}
+        <div className="mt-10 pt-9 border-t border-gold/20">
+          <p className="eyebrow mb-3">The dossier · Nine pages, sent by email</p>
+          <h3 className="text-2xl sm:text-3xl mb-3">{archetype.dossier.title}</h3>
+          <p className="text-lg text-parchment/75 mb-7 max-w-2xl">{archetype.dossier.dek}</p>
+
+          <div className="grid lg:grid-cols-2 gap-8 mb-8">
+            <div>
+              <p className="eyebrow mb-3">Inside the dossier</p>
+              <ul className="space-y-2.5">
+                {archetype.dossier.chapters.map((chapter, index) => (
+                  <li key={chapter.heading} className="text-base text-parchment/80 flex gap-3">
+                    <span className="font-cinzel text-[0.62rem] tracking-[0.22em] uppercase text-gold/85 mt-1 shrink-0">
+                      {ROMAN[index]}
+                    </span>
+                    <span>
+                      <strong className="text-parchment">{chapter.heading}</strong> — {chapter.note}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <p className="eyebrow mb-3">The pieces it names</p>
+              <ul className="space-y-2.5">
+                {archetype.dossier.keyPieces.map((piece) => (
+                  <li key={piece.label} className="text-base text-parchment/80 flex gap-3">
+                    <span className="text-oxblood mt-0.5 select-none">✦</span>
+                    <span>
+                      <strong className="text-parchment">{piece.label}</strong> — {piece.note}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-5 text-sm text-parchment/55 leading-relaxed">{archetype.dossier.care}</p>
+            </div>
+          </div>
+
+          <NewsletterCapture
+            source="villainess-quiz"
+            archetype={verdict}
+            variant="footer"
+            heading="Send me this dossier"
+            subheading={`The full ${archetype.dossier.title.split("·")[0].trim()} dossier, plus the Sunday Dispatch. One email, ticked by you.`}
+            ctaLabel="SEND THE DOSSIER"
+            revealDossier
+          />
         </div>
 
         <div className="mt-9 flex flex-col sm:flex-row gap-3 sm:items-center">

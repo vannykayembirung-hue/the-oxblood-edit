@@ -6,8 +6,13 @@ import {
   getAllArticles,
   getArticleById,
   getProductBySlug,
-  getAffiliateLinks
+  getAffiliateLinks,
+  getSubscribers,
+  getSubscriberStats
 } from "@/lib/db";
+import { ARCHETYPES } from "@/lib/villainess-quiz";
+import { isArchetypeKey } from "@/lib/newsletter";
+import { EDITORIAL_CATEGORIES, getCategoryLabel } from "@/lib/editorial-taxonomy";
 import {
   logoutAction,
   saveArticleAction,
@@ -15,7 +20,9 @@ import {
   deleteArticleAction,
   saveProductAction,
   saveAffiliateLinkAction,
-  deleteAffiliateLinkAction
+  deleteAffiliateLinkAction,
+  updateSubscriberStatusAction,
+  deleteSubscriberAction
 } from "@/app/admin/actions";
 import ImageUploadField from "@/components/ImageUploadField";
 
@@ -27,7 +34,11 @@ const NOTICE_MESSAGES: Record<string, string> = {
   "article-deleted": "Article removed from the catalog.",
   "product-saved": "Signature guide product details updated.",
   "affiliate-saved": "Affiliate piece saved.",
-  "affiliate-deleted": "Affiliate piece removed."
+  "affiliate-deleted": "Affiliate piece removed.",
+  "subscriber-confirmed": "Subscriber marked as confirmed (double opt-in recorded).",
+  "subscriber-pending": "Subscriber returned to pending — no dispatch will be sent until they confirm.",
+  "subscriber-unsubscribed": "Consent withdrawn. The subscriber is now suppressed from every send.",
+  "subscriber-erased": "Subscriber erased from the list."
 };
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -52,10 +63,12 @@ export default async function AdminDashboard({
     redirect("/admin/login");
   }
 
-  const [articles, product, affiliateLinks] = await Promise.all([
+  const [articles, product, affiliateLinks, subscribers, subscriberStats] = await Promise.all([
     getAllArticles(),
     getProductBySlug("the-oxblood-code"),
-    getAffiliateLinks()
+    getAffiliateLinks(),
+    getSubscribers(),
+    getSubscriberStats()
   ]);
 
   const publishedCount = articles.filter((a) => a.status === "published").length;
@@ -123,7 +136,7 @@ export default async function AdminDashboard({
       )}
 
       {/* KPI Metrics */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-8">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mt-8">
         <div className="bg-white p-6 border-t-4 border-gold shadow-sm">
           <p className="font-cinzel text-xs tracking-widest text-nearblack/70 uppercase">
             Published Stories
@@ -147,6 +160,15 @@ export default async function AdminDashboard({
             Tracked Outbound Clicks
           </p>
           <strong className="text-4xl font-cinzel block mt-2">{totalClicks}</strong>
+        </div>
+        <div className="bg-white p-6 border-t-4 border-oxblood shadow-sm">
+          <p className="font-cinzel text-xs tracking-widest text-nearblack/70 uppercase">
+            Dispatch Subscribers
+          </p>
+          <strong className="text-4xl font-cinzel block mt-2">{subscriberStats.total}</strong>
+          <p className="text-xs text-nearblack/60 mt-1">
+            {subscriberStats.confirmed} confirmed · {subscriberStats.pending} pending
+          </p>
         </div>
       </div>
 
@@ -192,6 +214,16 @@ export default async function AdminDashboard({
         >
           Affiliate Curation ({affiliateLinks.length})
         </Link>
+        <Link
+          href="/admin?tab=subscribers"
+          className={`px-4 py-2.5 font-cinzel text-xs tracking-widest uppercase no-underline transition-colors ${
+            activeTab === "subscribers"
+              ? "bg-nearblack text-cream"
+              : "bg-white text-nearblack hover:bg-nearblack/10"
+          }`}
+        >
+          Subscribers ({subscriberStats.total})
+        </Link>
       </div>
 
       {/* TAB 1: ARTICLES LIST */}
@@ -235,7 +267,7 @@ export default async function AdminDashboard({
                       </td>
                       <td className="py-4 px-4">
                         <span className="font-cinzel text-xs uppercase tracking-widest px-2.5 py-1 bg-cream border border-gold/50">
-                          {article.category}
+                          {getCategoryLabel(article.category)}
                         </span>
                       </td>
                       <td className="py-4 px-4">
@@ -373,10 +405,11 @@ export default async function AdminDashboard({
                   defaultValue={editingArticle?.category || "style"}
                   className="w-full border border-nearblack/25 bg-cream/30 px-3.5 py-2.5 text-base focus:border-oxblood focus:outline-none"
                 >
-                  <option value="style">Style</option>
-                  <option value="capsule">Capsule Wardrobe</option>
-                  <option value="beauty">Beauty</option>
-                  <option value="interiors">Interiors</option>
+                  {EDITORIAL_CATEGORIES.map((category) => (
+                    <option key={category.key} value={category.key}>
+                      {category.label} — {category.blurb}
+                    </option>
+                  ))}
                 </select>
               </label>
 
@@ -747,6 +780,212 @@ export default async function AdminDashboard({
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* TAB 5: NEWSLETTER SUBSCRIBERS */}
+      {activeTab === "subscribers" && (
+        <div className="mt-8">
+          <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
+            <div>
+              <h2 className="text-2xl">Dispatch Subscribers</h2>
+              <p className="text-nearblack/75 max-w-2xl">
+                Every row is a consent record: the wording shown, its version, the surface it came
+                from and the moment of opt-in. Double opt-in stays <em>pending</em> until the
+                confirmation link is opened.
+              </p>
+            </div>
+            <a
+              href="/api/admin/subscribers/export"
+              className="btn-gold no-underline"
+            >
+              EXPORT CSV
+            </a>
+          </div>
+
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-7">
+            <div className="bg-white p-5 border-t-4 border-nearblack shadow-sm">
+              <p className="font-cinzel text-xs tracking-widest text-nearblack/70 uppercase">
+                Total
+              </p>
+              <strong className="text-3xl font-cinzel block mt-2">{subscriberStats.total}</strong>
+            </div>
+            <div className="bg-white p-5 border-t-4 border-gold shadow-sm">
+              <p className="font-cinzel text-xs tracking-widest text-nearblack/70 uppercase">
+                Confirmed
+              </p>
+              <strong className="text-3xl font-cinzel block mt-2">
+                {subscriberStats.confirmed}
+              </strong>
+            </div>
+            <div className="bg-white p-5 border-t-4 border-gold/50 shadow-sm">
+              <p className="font-cinzel text-xs tracking-widest text-nearblack/70 uppercase">
+                Pending
+              </p>
+              <strong className="text-3xl font-cinzel block mt-2">{subscriberStats.pending}</strong>
+            </div>
+            <div className="bg-white p-5 border-t-4 border-oxblood shadow-sm">
+              <p className="font-cinzel text-xs tracking-widest text-nearblack/70 uppercase">
+                Withdrawn
+              </p>
+              <strong className="text-3xl font-cinzel block mt-2">
+                {subscriberStats.unsubscribed}
+              </strong>
+            </div>
+            <div className="bg-white p-5 border-t-4 border-nearblack/40 shadow-sm">
+              <p className="font-cinzel text-xs tracking-widest text-nearblack/70 uppercase">
+                Last 7 days
+              </p>
+              <strong className="text-3xl font-cinzel block mt-2">
+                {subscriberStats.last7Days}
+              </strong>
+            </div>
+          </div>
+
+          {subscriberStats.byArchetype.length > 0 && (
+            <div className="bg-white border border-nearblack/15 shadow-sm p-5 mb-7">
+              <p className="font-cinzel text-xs tracking-widest uppercase text-nearblack/70 mb-3">
+                Dossiers requested by archetype
+              </p>
+              <div className="flex flex-wrap gap-2.5">
+                {subscriberStats.byArchetype.map((row) => (
+                  <span
+                    key={row.archetype}
+                    className="font-cinzel text-xs uppercase tracking-widest px-3 py-1.5 bg-cream border border-gold/50"
+                  >
+                    {isArchetypeKey(row.archetype)
+                      ? ARCHETYPES[row.archetype].name
+                      : row.archetype}{" "}
+                    · {row.count}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="bg-white border border-nearblack/15 shadow-sm overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-nearblack/15 bg-nearblack text-cream font-cinzel text-xs tracking-wider uppercase">
+                  <th className="py-3 px-4">Address</th>
+                  <th className="py-3 px-4">Dossier</th>
+                  <th className="py-3 px-4">Source</th>
+                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4">Consent</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-nearblack/10">
+                {subscribers.map((subscriber) => {
+                  const isConfirmed = subscriber.status === "confirmed";
+                  const isWithdrawn = subscriber.status === "unsubscribed";
+                  return (
+                    <tr key={subscriber.id} className="hover:bg-cream/30">
+                      <td className="py-3.5 px-4">
+                        <p className="font-semibold break-all">{subscriber.email}</p>
+                        {subscriber.ip_hash && (
+                          <p className="text-xs text-nearblack/50 font-mono">
+                            consent ip hash {subscriber.ip_hash.slice(0, 12)}…
+                          </p>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-sm">
+                        {subscriber.archetype && isArchetypeKey(subscriber.archetype)
+                          ? ARCHETYPES[subscriber.archetype].name
+                          : "—"}
+                      </td>
+                      <td className="py-3.5 px-4 text-sm font-mono">{subscriber.source}</td>
+                      <td className="py-3.5 px-4">
+                        <span
+                          className={`inline-block font-cinzel text-xs uppercase tracking-widest px-2.5 py-1 ${
+                            isConfirmed
+                              ? "bg-gold/25 text-nearblack border border-gold"
+                              : isWithdrawn
+                                ? "bg-nearblack/10 text-nearblack/70 border border-nearblack/25"
+                                : "bg-oxblood/15 text-oxblood border border-oxblood/30"
+                          }`}
+                        >
+                          {subscriber.status}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-sm text-nearblack/75">
+                        <p>{new Date(subscriber.consented_at).toLocaleString("en-GB")}</p>
+                        <p className="text-xs font-mono text-nearblack/55">
+                          {subscriber.consent_version}
+                        </p>
+                        {subscriber.confirmed_at && (
+                          <p className="text-xs text-nearblack/55">
+                            confirmed {new Date(subscriber.confirmed_at).toLocaleDateString("en-GB")}
+                          </p>
+                        )}
+                        {subscriber.unsubscribed_at && (
+                          <p className="text-xs text-oxblood/80">
+                            withdrawn{" "}
+                            {new Date(subscriber.unsubscribed_at).toLocaleDateString("en-GB")}
+                          </p>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          {!isConfirmed && (
+                            <form action={updateSubscriberStatusAction}>
+                              <input type="hidden" name="id" value={subscriber.id} />
+                              <input type="hidden" name="status" value="confirmed" />
+                              <button
+                                type="submit"
+                                className="px-2.5 py-1 font-cinzel text-xs uppercase border border-nearblack/30 bg-white hover:bg-gold cursor-pointer"
+                              >
+                                Confirm
+                              </button>
+                            </form>
+                          )}
+                          {!isWithdrawn && (
+                            <form action={updateSubscriberStatusAction}>
+                              <input type="hidden" name="id" value={subscriber.id} />
+                              <input type="hidden" name="status" value="unsubscribed" />
+                              <button
+                                type="submit"
+                                className="px-2.5 py-1 font-cinzel text-xs uppercase border border-nearblack/30 bg-white hover:bg-cream cursor-pointer"
+                              >
+                                Suppress
+                              </button>
+                            </form>
+                          )}
+                          <form action={deleteSubscriberAction}>
+                            <input type="hidden" name="id" value={subscriber.id} />
+                            <button
+                              type="submit"
+                              className="px-2.5 py-1 font-cinzel text-xs uppercase border border-oxblood/40 text-oxblood bg-white hover:bg-oxblood hover:text-cream cursor-pointer"
+                            >
+                              Erase
+                            </button>
+                          </form>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {subscribers.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="py-6 text-center text-nearblack/70">
+                      No subscribers yet. Captures land here from the quiz dossier, the homepage and
+                      the footer, each with its consent wording on file.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <p className="text-sm text-nearblack/65 mt-5 max-w-3xl">
+            UK GDPR: consent is the lawful basis (Art. 6(1)(a)). <strong>Suppress</strong> keeps the
+            withdrawal on record so no further send reaches that address; <strong>Erase</strong>{" "}
+            removes the record entirely for a right-to-erasure request. The public notice is at{" "}
+            <a href="/privacy" className="text-oxblood underline">
+              /privacy
+            </a>
+            .
+          </p>
         </div>
       )}
     </div>

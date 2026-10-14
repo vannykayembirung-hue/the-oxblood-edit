@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getPublishedArticles } from "@/lib/db";
+import { EDITORIAL_CATEGORIES, getCategoryLabel } from "@/lib/editorial-taxonomy";
 
 export const dynamic = "force-dynamic";
 
@@ -10,13 +11,11 @@ export const metadata = {
   alternates: { canonical: "/journal" }
 };
 
+// Filter labels come from the house taxonomy so the journal, the CMS select and
+// the structured data can never disagree about what a section is called.
 const CATEGORIES = [
   { key: "all", label: "All Stories" },
-  { key: "style", label: "Style" },
-  { key: "capsule", label: "Capsule" },
-  { key: "beauty", label: "Beauty" },
-  { key: "interiors", label: "Interiors" },
-  { key: "craft", label: "Craft" }
+  ...EDITORIAL_CATEGORIES.map((category) => ({ key: category.key, label: category.label }))
 ];
 
 function estimateReadingMinutes(html: string | null): number {
@@ -126,7 +125,7 @@ export default async function JournalPage({
             </Link>
             <div className="p-7 sm:p-10 flex flex-col justify-center">
               <p className="font-cinzel text-[0.62rem] tracking-[0.26em] uppercase text-gold/85 mb-3">
-                {lead.category} · Featured story
+                {getCategoryLabel(lead.category)} · Featured story
               </p>
               <h2 className="text-2xl sm:text-4xl mb-3 leading-tight">
                 <Link href={`/journal/${lead.slug}`} className="no-underline hover:text-gold transition-colors">
@@ -185,7 +184,7 @@ export default async function JournalPage({
                     <div>
                       <div className="flex flex-wrap items-center gap-2.5 mb-3 text-sm">
                         <span className="font-cinzel text-[0.62rem] uppercase tracking-[0.24em] text-gold/85">
-                          {a.category}
+                          {getCategoryLabel(a.category)}
                         </span>
                         <span className="text-gold/40">·</span>
                         <span className="text-parchment/55">{dateStr}</span>
