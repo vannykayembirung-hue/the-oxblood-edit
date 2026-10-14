@@ -15,6 +15,14 @@ import {
   type EditorialPlate,
   type EditorialPlateKey
 } from "@/lib/editorial-visuals";
+import {
+  OXBLOOD_CODE_SLUG,
+  PRODUCT_SEEDS,
+  PRODUCT_SLUGS,
+  VILLAINESS_SLUG,
+  isProductSlug,
+  type ProductSlug
+} from "@/lib/products";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
@@ -388,22 +396,8 @@ const DEFAULT_SEED_DATA: LocalStoreData = {
     }
   ],
   products: [
-    {
-      id: "b1000000-0000-4000-8000-000000000001",
-      name: "The Oxblood Code",
-      slug: "the-oxblood-code",
-      price: 27,
-      gumroad_url: "__GUMROAD_URL__",
-      description:
-        "A 78-page dark-romantic wardrobe architecture and seasonal styling system for intentional dressing across the US and UK.",
-      what_inside: [
-        "78 pages PDF",
-        "12 outfit formulas",
-        "Palette #6E1423",
-        "US 0-16 / UK 4-20",
-        "Printable checklist"
-      ]
-    }
+    { id: "b1000000-0000-4000-8000-000000000001", ...PRODUCT_SEEDS[OXBLOOD_CODE_SLUG] },
+    { id: "b1000000-0000-4000-8000-000000000002", ...PRODUCT_SEEDS[VILLAINESS_SLUG] }
   ],
   affiliate_links: [
     {
@@ -444,6 +438,21 @@ const DEFAULT_SEED_DATA: LocalStoreData = {
 
 const LOCAL_STORE_PATH = path.join(process.cwd(), ".data", "local-store.json");
 
+/**
+ * Local stores written before the two Gumroad editions shipped still hold the
+ * placeholder "78-page" Oxblood Code row (with `__GUMROAD_URL__`). Swap that
+ * untouched seed for the real edition; anything an editor changed is kept.
+ */
+function migrateLegacyProducts(products: ProductRecord[]): ProductRecord[] {
+  return products.map((product) => {
+    const isLegacySeed =
+      product.slug === OXBLOOD_CODE_SLUG &&
+      product.gumroad_url === "__GUMROAD_URL__" &&
+      (product.description ?? "").startsWith("A 78-page");
+    return isLegacySeed ? { id: product.id, ...PRODUCT_SEEDS[OXBLOOD_CODE_SLUG] } : product;
+  });
+}
+
 function readLocalStore(): LocalStoreData {
   try {
     if (fs.existsSync(LOCAL_STORE_PATH)) {
@@ -451,7 +460,9 @@ function readLocalStore(): LocalStoreData {
       const parsed = JSON.parse(raw) as Partial<LocalStoreData>;
       return {
         articles: Array.isArray(parsed.articles) ? parsed.articles : DEFAULT_SEED_DATA.articles,
-        products: Array.isArray(parsed.products) ? parsed.products : DEFAULT_SEED_DATA.products,
+        products: Array.isArray(parsed.products)
+          ? migrateLegacyProducts(parsed.products)
+          : DEFAULT_SEED_DATA.products,
         affiliate_links: Array.isArray(parsed.affiliate_links)
           ? parsed.affiliate_links
           : DEFAULT_SEED_DATA.affiliate_links,
@@ -797,7 +808,13 @@ export async function deleteArticleById(id: string): Promise<void> {
   writeLocalStore(store);
 }
 
-export async function getProductBySlug(slug = "the-oxblood-code"): Promise<ProductRecord | null> {
+/** Seed copy of an edition, used when Neon or the local store has no row for it yet. */
+function seedProduct(slug: ProductSlug): ProductRecord {
+  const seed = DEFAULT_SEED_DATA.products.find((p) => p.slug === slug);
+  return structuredClone(seed ?? { id: `seed-${slug}`, ...PRODUCT_SEEDS[slug] });
+}
+
+export async function getProductBySlug(slug = OXBLOOD_CODE_SLUG): Promise<ProductRecord | null> {
   if (sql) {
     try {
       const rows = await sql`
@@ -807,13 +824,44 @@ export async function getProductBySlug(slug = "the-oxblood-code"): Promise<Produ
         limit 1
       `;
       if (rows[0]) return normalizeProductRow(rows[0] as Record<string, unknown>);
-      return null;
+      return isProductSlug(slug) ? seedProduct(slug) : null;
     } catch (error) {
       console.error("Database query failed in getProductBySlug:", error);
     }
   }
   const store = readLocalStore();
-  return store.products.find((p) => p.slug === slug) ?? store.products[0] ?? null;
+  const found = store.products.find((p) => p.slug === slug);
+  if (found) return found;
+  return isProductSlug(slug) ? seedProduct(slug) : null;
+}
+
+/**
+ * The house's two Gumroad editions, always in display order:
+ * `the-oxblood-code` (Édition 01) then `villainess-wardrobe-system` (Édition 02).
+ * An edition missing from the database (neon.sql not re-run yet) falls back to
+ * its seed so the shop never renders a single product.
+ */
+export async function getAllProducts(): Promise<ProductRecord[]> {
+  const slugs = [...PRODUCT_SLUGS];
+  let rows: ProductRecord[] = [];
+
+  if (sql) {
+    try {
+      const result = (await sql`
+        select id, name, slug, price, gumroad_url, description, what_inside
+        from products
+        where slug = any(${slugs})
+      `) as Record<string, unknown>[];
+      rows = result.map(normalizeProductRow);
+    } catch (error) {
+      console.error("Database query failed in getAllProducts:", error);
+      rows = readLocalStore().products;
+    }
+  } else {
+    rows = readLocalStore().products;
+  }
+
+  return slugs.map((slug) => rows.find((p) => p.slug === slug) ?? seedProduct(slug));
 }
 
 export interface SaveProductInput {
@@ -826,9 +874,11 @@ export interface SaveProductInput {
 }
 
 export async function saveProduct(input: SaveProductInput): Promise<ProductRecord> {
-  const slug = slugify(input.slug || "the-oxblood-code") || "the-oxblood-code";
-  const name = input.name.trim() || "The Oxblood Code";
-  const price = Number.isFinite(input.price) && input.price >= 0 ? Math.round(input.price) : 27;
+  const slug = slugify(input.slug || OXBLOOD_CODE_SLUG) || OXBLOOD_CODE_SLUG;
+  const seed = isProductSlug(slug) ? PRODUCT_SEEDS[slug] : PRODUCT_SEEDS[OXBLOOD_CODE_SLUG];
+  const name = input.name.trim() || seed.name;
+  const price =
+    Number.isFinite(input.price) && input.price >= 0 ? Math.round(input.price) : seed.price;
   const gumroadUrl = input.gumroad_url?.trim() || null;
   const description = input.description?.trim() || null;
   const whatInside = input.what_inside.map((s) => s.trim()).filter(Boolean);

@@ -12,6 +12,7 @@ import {
   deleteSubscriberById
 } from "@/lib/db";
 import { isSafeHttpUrl } from "@/lib/sanitize";
+import { PRODUCT_SEEDS, isProductSlug } from "@/lib/products";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { AuthError } from "next-auth";
@@ -31,6 +32,7 @@ function revalidateAllEditorialPaths(slug?: string) {
     revalidatePath(`/journal/${slug}`);
   }
   revalidatePath("/shop/the-oxblood-code");
+  revalidatePath("/journal/[slug]", "page");
   revalidatePath("/admin");
 }
 
@@ -125,15 +127,21 @@ export async function deleteArticleAction(formData: FormData) {
 export async function saveProductAction(formData: FormData) {
   await requireAdminSession();
 
-  const name = String(formData.get("name") || "The Oxblood Code").trim();
-  const slug = String(formData.get("slug") || "the-oxblood-code").trim();
-  const priceRaw = Number(formData.get("price") ?? 27);
+  // Each Gumroad edition has its own form; the slug says which one is being saved.
+  const slug = String(formData.get("slug") || "").trim();
+  if (!isProductSlug(slug)) {
+    redirect("/admin?tab=product&error=unknown-product");
+  }
+  const seed = PRODUCT_SEEDS[slug];
+
+  const name = String(formData.get("name") || "").trim() || seed.name;
+  const priceRaw = Number(formData.get("price") ?? seed.price);
   const gumroadUrl = String(formData.get("gumroad_url") || "").trim();
   const description = String(formData.get("description") || "").trim();
   const whatInsideRaw = String(formData.get("what_inside") || "");
 
   if (gumroadUrl && gumroadUrl !== "__GUMROAD_URL__" && !isSafeHttpUrl(gumroadUrl)) {
-    redirect("/admin?tab=product&error=invalid-gumroad-url");
+    redirect(`/admin?tab=product&product=${slug}&error=invalid-gumroad-url`);
   }
 
   const whatInside = whatInsideRaw
@@ -145,13 +153,14 @@ export async function saveProductAction(formData: FormData) {
     name,
     slug,
     price: priceRaw,
-    gumroad_url: gumroadUrl || null,
+    // Empty means "use the house link" — store it explicitly so every surface agrees.
+    gumroad_url: gumroadUrl || seed.gumroad_url,
     description: description || null,
     what_inside: whatInside
   });
 
   revalidateAllEditorialPaths();
-  redirect("/admin?tab=product&notice=product-saved");
+  redirect(`/admin?tab=product&product=${slug}&notice=product-saved#product-${slug}`);
 }
 
 export async function saveAffiliateLinkAction(formData: FormData) {
