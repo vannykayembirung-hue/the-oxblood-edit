@@ -5,7 +5,8 @@
 -- rows created before the 16:9 Dark Elegance branding landed.
 --
 -- What lives here, in order:
---   1. articles / products / affiliate_links / users / subscribers
+--   1. articles / products (the two Gumroad editions) / affiliate_links /
+--      users / subscribers
 --   2. the nine pillar stories of the editorial run (UK, US and both) with
 --      16:9 covers and in-body plates, staggered one per week
 --   3. a one-off schedule correction: every pillar pinned to a house section
@@ -39,15 +40,60 @@ create table if not exists products (
   what_inside text[]
 );
 
+-- The house's two Gumroad digital editions (mirrors lib/products.ts).
+--   Édition 01 · the-oxblood-code            · $27
+--   Édition 02 · villainess-wardrobe-system  · $19 · £15
 insert into products (name, slug, price, gumroad_url, description, what_inside)
-values (
-  'The Oxblood Code',
+values
+(
+  'The Oxblood Code — The Fall/Winter 2026 Lookbook & Style Guide',
   'the-oxblood-code',
   27,
-  '__GUMROAD_URL__',
-  'A 78-page dark-romantic wardrobe architecture and seasonal styling system for intentional dressing across the US and UK.',
-  array['78 pages PDF','12 outfit formulas','Palette #6E1423','US 0-16 / UK 4-20','Printable checklist']
-)on conflict (slug) do nothing;
+  'https://theoxblood.gumroad.com/l/ehczlj',
+  'The Oxblood Code is a 37-page dark elegance style system for women: the 5-colour strip, a 12-piece capsule with 3 budget tiers (£ & $), 21 outfit formulas, rituals, care codes and print-ready tools — built for UK & US wardrobes. Thirty days from costume to signature.',
+  array[
+    '37-page Fall/Winter 2026 Lookbook & Style Guide',
+    'The 5-colour chromatic strip (#6E1423)',
+    '12-piece capsule with 3 budget tiers (£ & $)',
+    '21 outfit formulas + evening rituals',
+    'Fabric care codes & print-ready tools (UK & US)'
+  ]
+),
+(
+  'The Villainess Wardrobe System',
+  'villainess-wardrobe-system',
+  19,
+  'https://theoxblood.gumroad.com/l/villainess-wardrobe-system',
+  'Four dark-romantic style dossiers (38-page PDF, A4 + US Letter, instant download). Four archetypes, twelve pieces each, twenty-one outfits from every twelve—built so you stop buying dark pieces that don''t work together.',
+  array[
+    '4 Dossiers · 38 Pages · A4 (UK) + US Letter',
+    'Velvet Widow · Library Siren · Crimson Heiress · Thorned Muse',
+    '12 core pieces each + priority buying order',
+    '21 outfit formulas from every twelve',
+    '3 budget tiers (£ GBP & $ USD)',
+    'Undertone lip, kohl & nail guide + printable audit'
+  ]
+)
+on conflict (slug) do nothing;
+
+-- One-off repair: databases seeded before the editions shipped still hold the
+-- placeholder "78-page" Oxblood Code row. Only that untouched placeholder is
+-- replaced — a row already edited in /admin?tab=product is left alone.
+update products set
+  name = 'The Oxblood Code — The Fall/Winter 2026 Lookbook & Style Guide',
+  price = 27,
+  gumroad_url = 'https://theoxblood.gumroad.com/l/ehczlj',
+  description = 'The Oxblood Code is a 37-page dark elegance style system for women: the 5-colour strip, a 12-piece capsule with 3 budget tiers (£ & $), 21 outfit formulas, rituals, care codes and print-ready tools — built for UK & US wardrobes. Thirty days from costume to signature.',
+  what_inside = array[
+    '37-page Fall/Winter 2026 Lookbook & Style Guide',
+    'The 5-colour chromatic strip (#6E1423)',
+    '12-piece capsule with 3 budget tiers (£ & $)',
+    '21 outfit formulas + evening rituals',
+    'Fabric care codes & print-ready tools (UK & US)'
+  ]
+where slug = 'the-oxblood-code'
+  and (gumroad_url is null or gumroad_url = '__GUMROAD_URL__')
+  and description like 'A 78-page%';
 
 create table if not exists affiliate_links (
   id uuid primary key default gen_random_uuid(),

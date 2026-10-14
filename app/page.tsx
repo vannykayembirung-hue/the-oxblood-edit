@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { getPublishedArticles, getProductBySlug, getAffiliateLinks } from "@/lib/db";
+import { getPublishedArticles, getAllProducts, getAffiliateLinks } from "@/lib/db";
+import ProductEdition from "@/components/ProductEdition";
 import NewsletterCapture from "@/components/NewsletterCapture";
 import WaxSeal from "@/components/WaxSeal";
 import { CLARA_VANCE, REVIEWED_BY } from "@/lib/editorial-desk";
@@ -15,16 +16,11 @@ export const metadata = {
 };
 
 export default async function Home() {
-  const [articles, product, affiliateLinks] = await Promise.all([
+  const [articles, products, affiliateLinks] = await Promise.all([
     getPublishedArticles(3),
-    getProductBySlug("the-oxblood-code"),
+    getAllProducts(),
     getAffiliateLinks()
   ]);
-
-  const guideHref =
-    product?.gumroad_url && product.gumroad_url !== "__GUMROAD_URL__"
-      ? product.gumroad_url
-      : "/shop/the-oxblood-code";
 
   return (
     <div>
@@ -49,7 +45,7 @@ export default async function Home() {
               Her uniform. Her lip. Her book.
             </p>
             <div className="flex flex-wrap gap-3">
-              <Link href={guideHref} className="btn-oxblood">
+              <Link href="/shop/the-oxblood-code" className="btn-oxblood">
                 Discover The Oxblood Code
               </Link>
               <Link href="/quiz" className="btn-ghost">
@@ -78,40 +74,17 @@ export default async function Home() {
         The Journal · Stories For The Darker Half Of The Year
       </Link>
 
-      {/* Signature Guide */}
-      <section className="px-[6%] py-16">
-        <div className="max-w-6xl mx-auto grid lg:grid-cols-[1fr_1.1fr] gap-10 items-center">
-          <figure className="plate w-full order-2 lg:order-1">
-            <span className="frame-16x9 block">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/images/editorial/capsule-wardrobe-16x9.jpg"
-                alt="Twelve curated garments in jet black wool, oxblood velvet and ivory silk on an antique valet stand"
-                width={1920}
-                height={1080}
-                loading="lazy"
-              />
-            </span>
-            <figcaption>Plate II · Twelve pieces, one chromatic spine</figcaption>
-          </figure>
-
-          <div className="order-1 lg:order-2">
-            <p className="eyebrow mb-3">Seasonal System</p>
-            <h2 className="text-3xl sm:text-4xl mb-4">The signature guide</h2>
-            <p className="text-xl text-parchment/80 mb-5">
-              {product?.description ||
-                "Build a wardrobe around oxblood, black velvet, antique gold and timeless silhouettes."}
-            </p>
-            <p className="text-lg text-parchment/70 mb-7">
-              <strong className="text-parchment font-cinzel text-sm tracking-[0.18em] uppercase">
-                {product?.name || "The Oxblood Code"}
-              </strong>
-              <span className="text-gold mx-2">·</span>${product?.price ?? 27} USD
-              <span className="text-gold mx-2">·</span>78 pages
-            </p>
-            <Link href="/shop/the-oxblood-code" className="btn-oxblood">
-              Explore The Guide
-            </Link>
+      {/* The House Editions — both Gumroad products, in the house layout */}
+      <section id="editions" className="px-[6%] py-16">
+        <div className="max-w-5xl mx-auto">
+          <div className="mb-10">
+            <p className="eyebrow mb-3">The House Editions · Instant Digital Download</p>
+            <h2 className="text-3xl sm:text-4xl">Two editions. One wardrobe.</h2>
+          </div>
+          <div className="space-y-16">
+            {products.map((product) => (
+              <ProductEdition key={product.slug} product={product} />
+            ))}
           </div>
         </div>
       </section>

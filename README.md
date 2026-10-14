@@ -6,11 +6,11 @@ A luxury editorial publication and CMS built with Next.js 14 (App Router), Neon 
 
 - **Brand Landing Page (`/`)**: Hero showcase, *The Oxblood Code* signature guide feature, latest published journal stories, and curated affiliate pieces.
 - **Editorial Journal (`/journal` & `/journal/[slug]`)**: Dynamic SEO metadata (`generateMetadata`), sanitized HTML rendering (`sanitize-html`), cover images, and tracked affiliate recommendations.
-- **Signature Guide Page (`/shop/the-oxblood-code`)**: Product deliverables and Gumroad checkout integration.
+- **Shop Page (`/shop/the-oxblood-code`)**: Both Gumroad digital editions — *The Oxblood Code* (Edition 01, $27, `the-oxblood-code`) and *The Villainess Wardrobe System* (Edition 02, $19 · £15, `villainess-wardrobe-system`) — each as a 16:9 plate plus an included / instant-download grid. The homepage repeats the same two editions; the quiz result and every journal article offer both Gumroad buttons. Catalogue defaults live in `lib/products.ts`; `getAllProducts()` in `lib/db.ts` returns both editions in order.
 - **Full Editorial Back-Office (`/admin`)**:
   - Protected via Edge-compatible NextAuth v5 middleware (`middleware.ts` + `lib/auth.config.ts`) and rate-limited credentials login (`/admin/login`).
   - **Articles CRUD**: Create, edit, publish/unpublish (`draft` ↔ `published`), and delete editorial stories with live cover image upload.
-  - **Signature Guide Settings**: Edit product name, USD price, Gumroad checkout URL, description, and deliverable bullets.
+  - **Gumroad Products (`?tab=product`)**: Two side-by-side forms, one per edition, each saving its own name, USD price, Gumroad checkout URL, description, and deliverable bullets independently.
   - **Affiliate Curation & Click Tracking**: Add, edit, and delete US/UK affiliate pieces with outbound click tracking via `/api/affiliate/[id]`.
 - **Newsletter Capture & Consent (`/api/subscribe`)**: One opt-in endpoint behind every capture form, with double opt-in, honeypot, rate limiting and the consent wording + version stored against the subscriber row.
 - **Subscribers Tab (`/admin?tab=subscribers`)**: Confirm, suppress or erase subscribers, see the consent evidence and the archetype dossiers requested, and export the list as CSV via `/api/admin/subscribers/export`.

@@ -1,7 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getArticleBySlug, getPublishedArticles, getAffiliateLinks } from "@/lib/db";
+import { getArticleBySlug, getPublishedArticles, getAffiliateLinks, getAllProducts } from "@/lib/db";
+import {
+  PRODUCT_LAYOUTS,
+  VILLAINESS_SLUG,
+  formatProductPrice,
+  isProductSlug,
+  resolveGumroadUrl
+} from "@/lib/products";
 import { sanitizeEditorialHtml } from "@/lib/sanitize";
 import { getCategoryLabel } from "@/lib/editorial-taxonomy";
 import {
@@ -64,10 +71,11 @@ export default async function ArticlePage({
 }: {
   params: { slug: string };
 }) {
-  const [article, allArticles, affiliateLinks] = await Promise.all([
+  const [article, allArticles, affiliateLinks, products] = await Promise.all([
     getArticleBySlug(params.slug),
     getPublishedArticles(),
-    getAffiliateLinks()
+    getAffiliateLinks(),
+    getAllProducts()
   ]);
 
   if (!article) {
@@ -108,6 +116,20 @@ export default async function ArticlePage({
   };
 
   const coverImage = article.cover_image || FALLBACK_COVER;
+
+  // Both Gumroad editions — the Villainess system first, then The Oxblood Code.
+  const purchaseOptions = products
+    .filter((product) => isProductSlug(product.slug))
+    .map((product) => {
+      const slug = product.slug as keyof typeof PRODUCT_LAYOUTS;
+      return {
+        slug,
+        label: PRODUCT_LAYOUTS[slug].shortName,
+        price: formatProductPrice(slug, product.price),
+        href: resolveGumroadUrl(slug, product.gumroad_url)
+      };
+    })
+    .sort((a, b) => (a.slug === VILLAINESS_SLUG ? -1 : b.slug === VILLAINESS_SLUG ? 1 : 0));
 
   return (
     <article className="pb-16">
@@ -207,16 +229,34 @@ export default async function ArticlePage({
       {/* Signature Guide Callout */}
       <div className="px-[6%] mt-14">
         <div className="max-w-4xl mx-auto velvet-card velvet-card--rule p-8 sm:p-10">
-          <p className="eyebrow mb-3">The Complete System</p>
+          <p className="eyebrow mb-3">The Complete System · Instant digital download</p>
           <h2 className="text-2xl sm:text-3xl mb-3">
-            Want all 12 dark-romance outfit formulas?
+            Want the whole wardrobe, not just this formula?
           </h2>
           <p className="text-xl text-parchment/75 mb-7 max-w-2xl">
-            Explore <em>The Oxblood Code</em> — our 78-page digital wardrobe architecture for US
-            0–16 and UK 4–20 with printable seasonal checklists.
+            <em>The Villainess Wardrobe System</em> — four archetype dossiers, twelve pieces each, 38
+            pages in A4 and US Letter. Or <em>The Oxblood Code</em> — the 37-page Fall/Winter 2026
+            Lookbook &amp; Style Guide, with 21 outfit formulas and three budget tiers in £ and $.
           </p>
-          <Link href="/shop/the-oxblood-code" className="btn-oxblood">
-            Explore The Oxblood Code
+          <div className="grid sm:grid-cols-2 gap-3">
+            {purchaseOptions.map((option, index) => (
+              <a
+                key={option.slug}
+                href={option.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`${index === 0 ? "btn-oxblood" : "btn-ghost"} w-full text-center`}
+              >
+                {option.label} · {option.price}
+                <span className="sr-only"> (opens Gumroad in a new tab)</span>
+              </a>
+            ))}
+          </div>
+          <Link
+            href="/shop/the-oxblood-code"
+            className="inline-block mt-5 font-cinzel text-[0.64rem] tracking-[0.22em] uppercase text-gold no-underline hover:text-parchment"
+          >
+            Compare both editions →
           </Link>
         </div>
       </div>

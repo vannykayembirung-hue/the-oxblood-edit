@@ -5,12 +5,18 @@ import {
   hasDatabaseUrl,
   getAllArticles,
   getArticleById,
-  getProductBySlug,
+  getAllProducts,
   getAffiliateLinks,
   getSubscribers,
   getSubscriberStats
 } from "@/lib/db";
 import { ARCHETYPES } from "@/lib/villainess-quiz";
+import {
+  PRODUCT_LAYOUTS,
+  PRODUCT_SEEDS,
+  formatProductPrice,
+  isProductSlug
+} from "@/lib/products";
 import { isArchetypeKey } from "@/lib/newsletter";
 import { EDITORIAL_CATEGORIES, getCategoryLabel } from "@/lib/editorial-taxonomy";
 import {
@@ -32,7 +38,7 @@ const NOTICE_MESSAGES: Record<string, string> = {
   "article-saved": "Article saved and published paths revalidated.",
   "status-updated": "Article publication status updated.",
   "article-deleted": "Article removed from the catalog.",
-  "product-saved": "Signature guide product details updated.",
+  "product-saved": "Product details and Gumroad link updated across the site.",
   "affiliate-saved": "Affiliate piece saved.",
   "affiliate-deleted": "Affiliate piece removed.",
   "subscriber-confirmed": "Subscriber marked as confirmed (double opt-in recorded).",
@@ -44,6 +50,7 @@ const NOTICE_MESSAGES: Record<string, string> = {
 const ERROR_MESSAGES: Record<string, string> = {
   "missing-title": "Article title is required.",
   "invalid-gumroad-url": "Gumroad URL must be a valid http:// or https:// URL.",
+  "unknown-product": "Unknown product — only the two Gumroad editions can be edited here.",
   "invalid-affiliate": "Please provide a name, merchant, and valid http(s) URL."
 };
 
@@ -52,6 +59,7 @@ export default async function AdminDashboard({
 }: {
   searchParams?: {
     tab?: string;
+    product?: string;
     edit?: string;
     editAffiliate?: string;
     notice?: string;
@@ -63,9 +71,9 @@ export default async function AdminDashboard({
     redirect("/admin/login");
   }
 
-  const [articles, product, affiliateLinks, subscribers, subscriberStats] = await Promise.all([
+  const [articles, products, affiliateLinks, subscribers, subscriberStats] = await Promise.all([
     getAllArticles(),
-    getProductBySlug("the-oxblood-code"),
+    getAllProducts(),
     getAffiliateLinks(),
     getSubscribers(),
     getSubscriberStats()
@@ -202,7 +210,7 @@ export default async function AdminDashboard({
               : "bg-white text-nearblack hover:bg-nearblack/10"
           }`}
         >
-          Signature Guide Product
+          Gumroad Products ({products.length})
         </Link>
         <Link
           href="/admin?tab=affiliates"
@@ -509,109 +517,151 @@ export default async function AdminDashboard({
         </div>
       )}
 
-      {/* TAB 3: SIGNATURE GUIDE PRODUCT */}
+      {/* TAB 3: GUMROAD PRODUCTS — one independent form per edition */}
       {activeTab === "product" && (
-        <div className="mt-8 bg-white p-8 border-t-4 border-gold shadow-sm max-w-3xl">
-          <h2 className="text-2xl mb-1">Signature Guide Product Settings</h2>
-          <p className="text-nearblack/75 mb-6">
-            Configure the pricing, Gumroad checkout link, and deliverables for{" "}
-            <strong>The Oxblood Code</strong>.
-          </p>
+        <div className="mt-8">
+          <div className="mb-6">
+            <h2 className="text-2xl mb-1">Gumroad Digital Editions</h2>
+            <p className="text-nearblack/75 max-w-3xl">
+              Each edition saves on its own: name, USD price, Gumroad checkout link, description and
+              deliverables. Changes appear on <code>/</code>, <code>/shop/the-oxblood-code</code> and
+              the journal callouts.
+            </p>
+          </div>
 
-          <form action={saveProductAction} className="grid gap-5">
-            <input type="hidden" name="slug" value={product?.slug || "the-oxblood-code"} />
+          <div className="grid lg:grid-cols-2 gap-6 items-start">
+            {products.map((product) => {
+              if (!isProductSlug(product.slug)) return null;
+              const slug = product.slug;
+              const layout = PRODUCT_LAYOUTS[slug];
+              const seed = PRODUCT_SEEDS[slug];
+              const justSaved =
+                searchParams?.notice === "product-saved" && searchParams?.product === slug;
+              const currentUrl =
+                product.gumroad_url && product.gumroad_url !== "__GUMROAD_URL__"
+                  ? product.gumroad_url
+                  : "";
+              const fieldId = (name: string) => `${slug}-${name}`;
 
-            <div className="grid sm:grid-cols-2 gap-5">
-              <label className="block">
-                <span className="block font-cinzel text-xs tracking-widest uppercase mb-1.5">
-                  Product Name
-                </span>
-                <input
-                  type="text"
-                  name="name"
-                  required
-                  defaultValue={product?.name || "The Oxblood Code"}
-                  className="w-full border border-nearblack/25 bg-cream/30 px-3.5 py-2.5 text-base focus:border-oxblood focus:outline-none"
-                />
-              </label>
+              return (
+                <section
+                  key={slug}
+                  id={`product-${slug}`}
+                  className={`bg-white p-7 border-t-4 shadow-sm ${
+                    justSaved ? "border-oxblood ring-2 ring-gold/60" : "border-gold"
+                  }`}
+                >
+                  <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
+                    <p className="font-cinzel text-xs tracking-[0.2em] uppercase text-oxblood">
+                      Edition {layout.edition}
+                    </p>
+                    <span className="font-cinzel text-xs tracking-wider uppercase px-2 py-0.5 bg-cream border border-gold/50">
+                      {formatProductPrice(slug, product.price)}
+                    </span>
+                  </div>
+                  <h3 className="text-xl mb-1 leading-snug">{layout.shortName}</h3>
+                  <p className="text-sm text-nearblack/60 font-mono mb-5">slug: {slug}</p>
 
-              <label className="block">
-                <span className="block font-cinzel text-xs tracking-widest uppercase mb-1.5">
-                  Price (USD)
-                </span>
-                <input
-                  type="number"
-                  name="price"
-                  min={0}
-                  step={1}
-                  required
-                  defaultValue={product?.price ?? 27}
-                  className="w-full border border-nearblack/25 bg-cream/30 px-3.5 py-2.5 text-base focus:border-oxblood focus:outline-none"
-                />
-              </label>
-            </div>
+                  <form action={saveProductAction} className="grid gap-4">
+                    <input type="hidden" name="slug" value={slug} />
 
-            <label className="block">
-              <span className="block font-cinzel text-xs tracking-widest uppercase mb-1.5">
-                Gumroad Checkout URL
-              </span>
-              <input
-                type="url"
-                name="gumroad_url"
-                defaultValue={
-                  product?.gumroad_url && product.gumroad_url !== "__GUMROAD_URL__"
-                    ? product.gumroad_url
-                    : ""
-                }
-                placeholder="https://yourstore.gumroad.com/l/the-oxblood-code"
-                className="w-full border border-nearblack/25 bg-cream/30 px-3.5 py-2.5 text-base focus:border-oxblood focus:outline-none"
-              />
-              <span className="block text-xs text-nearblack/65 mt-1">
-                Leave empty until your live Gumroad product page is ready.
-              </span>
-            </label>
+                    <label className="block" htmlFor={fieldId("name")}>
+                      <span className="block font-cinzel text-xs tracking-widest uppercase mb-1.5">
+                        Product Name
+                      </span>
+                      <input
+                        id={fieldId("name")}
+                        type="text"
+                        name="name"
+                        required
+                        defaultValue={product.name || seed.name}
+                        className="w-full border border-nearblack/25 bg-cream/30 px-3.5 py-2.5 text-base focus:border-oxblood focus:outline-none"
+                      />
+                    </label>
 
-            <label className="block">
-              <span className="block font-cinzel text-xs tracking-widest uppercase mb-1.5">
-                Product Description
-              </span>
-              <textarea
-                name="description"
-                rows={3}
-                defaultValue={
-                  product?.description ||
-                  "A dark-romantic wardrobe system for timeless, intentional dressing."
-                }
-                className="w-full border border-nearblack/25 bg-cream/30 px-3.5 py-2.5 text-base focus:border-oxblood focus:outline-none"
-              />
-            </label>
+                    <label className="block" htmlFor={fieldId("price")}>
+                      <span className="block font-cinzel text-xs tracking-widest uppercase mb-1.5">
+                        Price (USD)
+                      </span>
+                      <input
+                        id={fieldId("price")}
+                        type="number"
+                        name="price"
+                        min={0}
+                        step={1}
+                        required
+                        defaultValue={product.price ?? seed.price}
+                        className="w-full border border-nearblack/25 bg-cream/30 px-3.5 py-2.5 text-base focus:border-oxblood focus:outline-none"
+                      />
+                      {layout.priceGbp != null && (
+                        <span className="block text-xs text-nearblack/65 mt-1">
+                          Shown with its GBP companion price: £{layout.priceGbp}.
+                        </span>
+                      )}
+                    </label>
 
-            <label className="block">
-              <span className="block font-cinzel text-xs tracking-widest uppercase mb-1.5">
-                What&rsquo;s Inside (One deliverable per line)
-              </span>
-              <textarea
-                name="what_inside"
-                rows={6}
-                defaultValue={(
-                  product?.what_inside || [
-                    "78 pages PDF",
-                    "12 outfit formulas",
-                    "Palette #6E1423",
-                    "US 0-16 / UK 4-20",
-                    "Printable checklist"
-                  ]
-                ).join("\n")}
-                className="w-full border border-nearblack/25 bg-cream/30 px-3.5 py-2.5 text-base focus:border-oxblood focus:outline-none"
-              />
-            </label>
+                    <label className="block" htmlFor={fieldId("gumroad_url")}>
+                      <span className="block font-cinzel text-xs tracking-widest uppercase mb-1.5">
+                        Gumroad Checkout URL
+                      </span>
+                      <input
+                        id={fieldId("gumroad_url")}
+                        type="url"
+                        name="gumroad_url"
+                        defaultValue={currentUrl}
+                        placeholder={seed.gumroad_url}
+                        className="w-full border border-nearblack/25 bg-cream/30 px-3.5 py-2.5 text-base focus:border-oxblood focus:outline-none"
+                      />
+                      <span className="block text-xs text-nearblack/65 mt-1 break-all">
+                        Leave empty to use the house link: {seed.gumroad_url}
+                      </span>
+                    </label>
 
-            <div>
-              <button type="submit" className="btn-gold border-0 cursor-pointer">
-                UPDATE PRODUCT GUIDE
-              </button>
-            </div>
-          </form>
+                    <label className="block" htmlFor={fieldId("description")}>
+                      <span className="block font-cinzel text-xs tracking-widest uppercase mb-1.5">
+                        Product Description
+                      </span>
+                      <textarea
+                        id={fieldId("description")}
+                        name="description"
+                        rows={5}
+                        defaultValue={product.description || seed.description}
+                        className="w-full border border-nearblack/25 bg-cream/30 px-3.5 py-2.5 text-base focus:border-oxblood focus:outline-none"
+                      />
+                    </label>
+
+                    <label className="block" htmlFor={fieldId("what_inside")}>
+                      <span className="block font-cinzel text-xs tracking-widest uppercase mb-1.5">
+                        What&rsquo;s Inside (One deliverable per line)
+                      </span>
+                      <textarea
+                        id={fieldId("what_inside")}
+                        name="what_inside"
+                        rows={7}
+                        defaultValue={(product.what_inside.length > 0
+                          ? product.what_inside
+                          : seed.what_inside
+                        ).join("\n")}
+                        className="w-full border border-nearblack/25 bg-cream/30 px-3.5 py-2.5 text-base focus:border-oxblood focus:outline-none"
+                      />
+                    </label>
+
+                    <div className="flex flex-wrap items-center gap-4">
+                      <button type="submit" className="btn-gold border-0 cursor-pointer">
+                        UPDATE EDITION {layout.edition}
+                      </button>
+                      <a
+                        href={`/shop/the-oxblood-code#${slug}`}
+                        className="font-cinzel text-xs tracking-widest uppercase text-oxblood underline"
+                      >
+                        View on site
+                      </a>
+                    </div>
+                  </form>
+                </section>
+              );
+            })}
+          </div>
         </div>
       )}
 

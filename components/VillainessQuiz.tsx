@@ -10,6 +10,30 @@ import {
   QUIZ_QUESTIONS,
   type ArchetypeKey
 } from "@/lib/villainess-quiz";
+import {
+  OXBLOOD_CODE_SLUG,
+  PRODUCT_SEEDS,
+  VILLAINESS_SLUG,
+  formatProductPrice
+} from "@/lib/products";
+
+/** The two Gumroad editions offered after the reading — Villainess first, it is the quiz's own system. */
+const PURCHASE_OPTIONS = [
+  {
+    slug: VILLAINESS_SLUG,
+    label: "The Villainess Wardrobe System",
+    href: PRODUCT_SEEDS[VILLAINESS_SLUG].gumroad_url,
+    price: formatProductPrice(VILLAINESS_SLUG, PRODUCT_SEEDS[VILLAINESS_SLUG].price),
+    className: "btn-oxblood"
+  },
+  {
+    slug: OXBLOOD_CODE_SLUG,
+    label: "The Oxblood Code",
+    href: PRODUCT_SEEDS[OXBLOOD_CODE_SLUG].gumroad_url,
+    price: formatProductPrice(OXBLOOD_CODE_SLUG, PRODUCT_SEEDS[OXBLOOD_CODE_SLUG].price),
+    className: "btn-ghost"
+  }
+] as const;
 
 /**
  * VillainessQuiz — "WHICH VILLAINESS ARE YOU?"
@@ -212,12 +236,32 @@ export default function VillainessQuiz() {
           />
         </div>
 
-        <div className="mt-9 flex flex-col sm:flex-row gap-3 sm:items-center">
-          <Link href={`/journal/${archetype.articleSlug}`} className="btn-oxblood flex-1 text-center">
+        {/* The two Gumroad editions */}
+        <div className="mt-10 pt-9 border-t border-gold/20">
+          <p className="eyebrow mb-3">Take the full system · Instant digital download</p>
+          <p className="text-lg text-parchment/75 mb-6 max-w-2xl">
+            All four archetypes, {archetype.name} included, twelve pieces each — or the season&rsquo;s
+            complete lookbook.
+          </p>
+          <div className="grid sm:grid-cols-2 gap-3">
+            {PURCHASE_OPTIONS.map((option) => (
+              <a
+                key={option.slug}
+                href={option.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`${option.className} w-full text-center`}
+              >
+                {option.label} · {option.price}
+                <span className="sr-only"> (opens Gumroad in a new tab)</span>
+              </a>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-6 flex flex-col sm:flex-row gap-3 sm:items-center">
+          <Link href={`/journal/${archetype.articleSlug}`} className="btn-ghost flex-1 text-center">
             READ THE FULL FORMULA
-          </Link>
-          <Link href="/shop/the-oxblood-code" className="btn-ghost flex-1 text-center">
-            THE OXBLOOD CODE · $27
           </Link>
           <button
             type="button"
