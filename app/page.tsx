@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { getPublishedArticles, getProductBySlug, getAffiliateLinks } from "@/lib/db";
+import NewsletterCapture from "@/components/NewsletterCapture";
 import WaxSeal from "@/components/WaxSeal";
+import { CLARA_VANCE, REVIEWED_BY } from "@/lib/editorial-desk";
+import { PILLAR_ARTICLES } from "@/lib/editorial-taxonomy";
 
 export const dynamic = "force-dynamic";
 
@@ -180,6 +183,51 @@ export default async function Home() {
         </div>
       </section>
 
+      {/* The desk — E-E-A-T: who writes this, and why they are qualified to */}
+      <section className="px-[6%] py-14 border-t border-gold/15">
+        <div className="max-w-5xl mx-auto grid lg:grid-cols-[auto_1fr] gap-9 items-start">
+          <div className="flex justify-center lg:justify-start">
+            <WaxSeal size={104} />
+          </div>
+          <div>
+            <p className="eyebrow mb-3">The signature · {PILLAR_ARTICLES.length} pillars, one desk</p>
+            <h2 className="text-3xl sm:text-4xl mb-3">{CLARA_VANCE.name}</h2>
+            <p className="text-lg italic text-gold/90 mb-4">{CLARA_VANCE.role}</p>
+            <p className="text-lg text-parchment/75 mb-5 max-w-2xl">{CLARA_VANCE.bio}</p>
+            <ul className="grid sm:grid-cols-2 gap-x-8 gap-y-2 mb-6">
+              {CLARA_VANCE.credentials.slice(0, 4).map((credential) => (
+                <li key={credential} className="text-base text-parchment/70 flex gap-3">
+                  <span className="text-oxblood mt-0.5 select-none">✦</span>
+                  <span>{credential}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="flex flex-wrap gap-3">
+              <Link href="/editorial-standards" className="btn-ghost">
+                Editorial standards
+              </Link>
+              <Link href="/about" className="btn-ghost">
+                House manifesto
+              </Link>
+            </div>
+            <p className="font-cinzel text-[0.66rem] tracking-[0.24em] uppercase text-parchment/50 mt-6">
+              Fit-reviewed by {REVIEWED_BY.name}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* The Sunday Dispatch — the house's single capture surface on the homepage */}
+      <section className="px-[6%] pb-14">
+        <div className="max-w-5xl mx-auto">
+          <NewsletterCapture
+            source="homepage"
+            heading="The Sunday Dispatch"
+            subheading="One considered letter a week: the formula of the moment, the fit file behind it, and the pieces the desk is actually wearing. Opt-in, double-confirmed, withdrawn in a click."
+          />
+        </div>
+      </section>
+
       {/* The Reading — quiz */}
       <section className="px-[6%] py-16">
         <div className="max-w-5xl mx-auto velvet-card p-8 sm:p-12 grid md:grid-cols-[auto_1fr] gap-9 items-center">
@@ -205,7 +253,13 @@ export default async function Home() {
         <section className="px-[6%] py-14 border-t border-gold/15">
           <div className="max-w-6xl mx-auto">
             <p className="eyebrow mb-3">The Curated Edit</p>
-            <h2 className="text-3xl mb-8">Key pieces for US &amp; UK wardrobes</h2>
+            <h2 className="text-3xl mb-4">Key pieces for US &amp; UK wardrobes</h2>
+            <p className="text-sm text-parchment/70 border-l-2 border-gold/50 pl-3 mb-8 max-w-2xl">
+              <span className="font-cinzel text-[0.62rem] tracking-[0.24em] uppercase text-gold/85 mr-2">
+                Affiliate ad
+              </span>
+              The desk may earn a commission if you buy through these links, at no extra cost to you.
+            </p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {affiliateLinks.slice(0, 3).map((item) => (
                 <div
@@ -229,10 +283,11 @@ export default async function Home() {
                   <a
                     href={`/api/affiliate/${item.id}`}
                     target="_blank"
-                    rel="noopener noreferrer nofollow"
+                    rel="sponsored nofollow noopener noreferrer"
                     className="font-cinzel text-[0.66rem] tracking-[0.22em] uppercase text-parchment/80 hover:text-gold no-underline transition-colors"
                   >
                     Shop Piece ↗
+                    <span className="sr-only"> (affiliate link, ad)</span>
                   </a>
                 </div>
               ))}

@@ -3,6 +3,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getArticleBySlug, getPublishedArticles, getAffiliateLinks } from "@/lib/db";
 import { sanitizeEditorialHtml } from "@/lib/sanitize";
+import { getCategoryLabel } from "@/lib/editorial-taxonomy";
+import {
+  CLARA_VANCE,
+  EDITORIAL_STANDARDS_LAST_UPDATED,
+  REVIEWED_BY,
+  buildAuthorJsonLd
+} from "@/lib/editorial-desk";
+import NewsletterCapture from "@/components/NewsletterCapture";
 import WaxSeal from "@/components/WaxSeal";
 
 export const dynamic = "force-dynamic";
@@ -77,6 +85,8 @@ export default async function ArticlePage({
 
   const relatedArticles = allArticles.filter((a) => a.slug !== article.slug).slice(0, 2);
 
+  // E-E-A-T: a named, credentialed author rather than an anonymous publisher,
+  // plus the review line the desk publishes on the page itself.
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "Article",
@@ -85,9 +95,16 @@ export default async function ArticlePage({
     image: [article.cover_image || FALLBACK_COVER],
     datePublished: article.created_at,
     dateModified: article.created_at,
-    articleSection: article.category,
-    author: { "@type": "Organization", name: "The Oxblood Edit" },
-    publisher: { "@type": "Organization", name: "The Oxblood Edit" }
+    articleSection: getCategoryLabel(article.category),
+    author: buildAuthorJsonLd(),
+    reviewedBy: { "@type": "Organization", name: REVIEWED_BY.name },
+    publisher: {
+      "@type": "Organization",
+      name: "The Oxblood Edit",
+      url: process.env.NEXT_PUBLIC_SITE_URL || "https://theoxbloodedit.com"
+    },
+    isAccessibleForFree: true,
+    inLanguage: "en"
   };
 
   const coverImage = article.cover_image || FALLBACK_COVER;
@@ -126,6 +143,34 @@ export default async function ArticlePage({
               {article.excerpt}
             </p>
           )}
+
+          {/* E-E-A-T signature: who wrote this, who checked it, when. */}
+          <div className="border-t border-b border-gold/20 py-5 mb-8">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <p className="text-base text-parchment/85">
+                By <strong className="text-parchment">{CLARA_VANCE.name}</strong>,{" "}
+                {CLARA_VANCE.role}
+              </p>
+              <span className="text-gold/40">·</span>
+              <p className="text-base text-parchment/65">
+                Fit-reviewed by {REVIEWED_BY.name}
+              </p>
+              <span className="text-gold/40">·</span>
+              <p className="text-base text-parchment/65">
+                Last reviewed {EDITORIAL_STANDARDS_LAST_UPDATED}
+              </p>
+            </div>
+            <p className="text-base text-parchment/65 mt-2.5 max-w-2xl">
+              {CLARA_VANCE.bio}{" "}
+              <Link
+                href="/editorial-standards"
+                className="text-gold underline underline-offset-4"
+              >
+                How the desk tests and corrects its work
+              </Link>
+              .
+            </p>
+          </div>
 
           <figure className="plate w-full">
             <span className="frame-16x9 block">
@@ -180,7 +225,7 @@ export default async function ArticlePage({
       {affiliateLinks.length > 0 && (
         <aside className="px-[6%] mt-14">
           <div className="max-w-4xl mx-auto pt-9 border-t border-gold/20">
-            <div className="flex flex-wrap items-baseline justify-between gap-2 mb-6">
+            <div className="flex flex-wrap items-baseline justify-between gap-2 mb-4">
               <div>
                 <p className="eyebrow mb-2">Shop the edit</p>
                 <h2 className="text-2xl">Curated pieces from this formula</h2>
@@ -189,6 +234,14 @@ export default async function ArticlePage({
                 Affiliate disclosure
               </Link>
             </div>
+            {/* ASA/CAP rule 2.1 + FTC 16 CFR 255: the ad is identified where it sits. */}
+            <p className="text-sm text-parchment/70 border-l-2 border-gold/50 pl-3 mb-6 max-w-2xl">
+              <span className="font-cinzel text-[0.62rem] tracking-[0.24em] uppercase text-gold/85 mr-2">
+                Affiliate ad
+              </span>
+              If you buy through a link below the desk may earn a commission at no extra cost to you.
+              Prices shown in USD and GBP at the time of publication; merchants set the final price.
+            </p>
             <div className="grid sm:grid-cols-3 gap-4">
               {affiliateLinks.slice(0, 3).map((item) => (
                 <div key={item.id} className="velvet-card p-5 flex flex-col justify-between">
@@ -206,10 +259,11 @@ export default async function ArticlePage({
                   <a
                     href={`/api/affiliate/${item.id}`}
                     target="_blank"
-                    rel="noopener noreferrer nofollow"
+                    rel="sponsored nofollow noopener noreferrer"
                     className="font-cinzel text-[0.64rem] uppercase tracking-[0.22em] text-parchment/80 hover:text-gold no-underline transition-colors"
                   >
                     View Piece ↗
+                    <span className="sr-only"> (affiliate link, ad)</span>
                   </a>
                 </div>
               ))}
@@ -269,7 +323,17 @@ export default async function ArticlePage({
         </section>
       )}
 
-      <div className="px-[6%] mt-16">
+      {/* Capture, sourced to the story that earned the opt-in */}
+      <section className="px-[6%] mt-16">
+        <div className="max-w-4xl mx-auto">
+          <NewsletterCapture
+            source="journal"
+            subheading={`${getCategoryLabel(article.category)} stories, fit files and the pieces the desk is actually wearing — one letter a week.`}
+          />
+        </div>
+      </section>
+
+      <div className="px-[6%] mt-10">
         <div className="max-w-4xl mx-auto">
           <Link href="/quiz" className="cta-bar">
             Which Villainess Are You? · Take The Six-Question Reading

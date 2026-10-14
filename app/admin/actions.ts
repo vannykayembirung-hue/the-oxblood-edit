@@ -7,7 +7,9 @@ import {
   deleteArticleById,
   saveProduct,
   saveAffiliateLink,
-  deleteAffiliateLinkById
+  deleteAffiliateLinkById,
+  setSubscriberStatus,
+  deleteSubscriberById
 } from "@/lib/db";
 import { isSafeHttpUrl } from "@/lib/sanitize";
 import { revalidatePath } from "next/cache";
@@ -190,4 +192,39 @@ export async function deleteAffiliateLinkAction(formData: FormData) {
     revalidateAllEditorialPaths();
   }
   redirect("/admin?tab=affiliates&notice=affiliate-deleted");
+}
+
+/**
+ * Subscriber administration.
+ *
+ * Marking someone `confirmed` or `unsubscribed` is a consent state change, so it
+ * writes the same timestamps the public endpoints do; `delete` is the Art. 17
+ * erasure path and removes the row rather than flagging it.
+ */
+export async function updateSubscriberStatusAction(formData: FormData) {
+  await requireAdminSession();
+
+  const id = String(formData.get("id") || "").trim();
+  const requested = String(formData.get("status") || "").trim();
+  const status =
+    requested === "confirmed" || requested === "unsubscribed" ? requested : "pending";
+
+  if (id) {
+    await setSubscriberStatus(id, status);
+    revalidatePath("/admin");
+  }
+
+  redirect(`/admin?tab=subscribers&notice=subscriber-${status}`);
+}
+
+export async function deleteSubscriberAction(formData: FormData) {
+  await requireAdminSession();
+
+  const id = String(formData.get("id") || "").trim();
+  if (id) {
+    await deleteSubscriberById(id);
+    revalidatePath("/admin");
+  }
+
+  redirect("/admin?tab=subscribers&notice=subscriber-erased");
 }

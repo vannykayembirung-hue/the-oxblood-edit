@@ -1,5 +1,6 @@
 import Link from "next/link";
 import WaxSeal from "@/components/WaxSeal";
+import { CLARA_VANCE, REVIEWED_BY } from "@/lib/editorial-desk";
 
 export const metadata = {
   title: "About — The Oxblood Edit",
@@ -74,6 +75,49 @@ export default function AboutPage() {
               <p className="text-base text-parchment/70">{principle.body}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* The desk — the person accountable for every formula on the site */}
+      <section className="px-[6%] py-10">
+        <div className="max-w-4xl mx-auto velvet-card velvet-card--rule p-8 sm:p-10">
+          <div className="flex flex-col sm:flex-row gap-8 items-start">
+            <WaxSeal size={92} className="shrink-0" />
+            <div>
+              <p className="eyebrow mb-2">The signature</p>
+              <h2 className="text-2xl sm:text-3xl mb-2">{CLARA_VANCE.name}</h2>
+              <p className="text-lg italic text-gold/90 mb-5">{CLARA_VANCE.role}</p>
+              {CLARA_VANCE.longBio.map((paragraph) => (
+                <p key={paragraph} className="text-lg text-parchment/75 mb-4">
+                  {paragraph}
+                </p>
+              ))}
+              <ul className="space-y-2.5 my-5">
+                {CLARA_VANCE.credentials.map((credential) => (
+                  <li key={credential} className="text-base text-parchment/72 flex gap-3">
+                    <span className="text-oxblood mt-0.5 select-none">✦</span>
+                    <span>{credential}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-base text-parchment/65 mb-6">
+                Everything published here is reviewed for fit and compliance by{" "}
+                <strong>{REVIEWED_BY.name}</strong>. Corrections are published rather than quietly
+                made.
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <Link href="/editorial-standards" className="btn-ghost">
+                  Editorial standards
+                </Link>
+                <Link href="/disclosure" className="btn-ghost">
+                  Affiliate disclosure
+                </Link>
+                <Link href="/privacy" className="btn-ghost">
+                  Privacy notice
+                </Link>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 

@@ -8,6 +8,21 @@
 
 export type ArchetypeKey = "velvet-widow" | "library-siren" | "crimson-heiress" | "thorned-muse";
 
+/**
+ * The dossier a reader receives by email after the reading.
+ *
+ * Kept next to the archetype rather than in the API route so the quiz page, the
+ * capture form and `/api/subscribe` all describe the same deliverable — the
+ * desk never promises a document the reader cannot actually be sent.
+ */
+export interface ArchetypeDossier {
+  title: string;
+  dek: string;
+  chapters: { heading: string; note: string }[];
+  keyPieces: { label: string; note: string }[];
+  care: string;
+}
+
 export interface Archetype {
   key: ArchetypeKey;
   name: string;
@@ -22,6 +37,7 @@ export interface Archetype {
   palette: { hex: string; name: string }[];
   articleSlug: string;
   articleLabel: string;
+  dossier: ArchetypeDossier;
 }
 
 export interface QuizOption {
@@ -67,7 +83,40 @@ export const ARCHETYPES: Record<ArchetypeKey, Archetype> = {
       { hex: "#C6A15B", name: "Antique Gold" }
     ],
     articleSlug: "how-to-dress-like-the-villainess-dark-romance-outfits",
-    articleLabel: "How to Dress Like the Villainess"
+    articleLabel: "How to Dress Like the Villainess",
+    dossier: {
+      title: "The Velvet Widow · A Dossier on Mourning as Armour",
+      dek: "Nine pages on length, weight and the single ornament — written for readers who would rather be read than noticed.",
+      chapters: [
+        {
+          heading: "The floor-length architecture",
+          note: "Hem weights, interlining and the reason a cape should pool one inch before you do."
+        },
+        {
+          heading: "Bias against straight grain",
+          note: "Why the Widow's column is cut on the bias and where straight grain still wins."
+        },
+        {
+          heading: "The candlelight check",
+          note: "Jet and oxblood judged at 6pm, in the light the garment will actually be worn in."
+        },
+        {
+          heading: "Sourcing double-faced wool",
+          note: "UK mill first, US importers second — with the GSM floor for each."
+        },
+        {
+          heading: "The single-ornament rule",
+          note: "One ring, one clasp, nothing that catches the candle twice."
+        }
+      ],
+      keyPieces: [
+        { label: "Floor-sweeping cape coat", note: "Double-faced wool, 520gsm+, jet with a wine lining" },
+        { label: "Bias silk column", note: "Lined in oxblood; hem finished by hand, never by machine" },
+        { label: "Square-toe boot", note: "Burnished burgundy calfskin, 65mm sculptural heel" },
+        { label: "Mourning signet", note: "Antique gold, matte — the house's one permitted brightness" }
+      ],
+      care: "Brush the wool after every wear, rest it 24 hours between outings, and never press velvet — steam it, facing the nap down."
+    }
   },
   "library-siren": {
     key: "library-siren",
@@ -92,7 +141,40 @@ export const ARCHETYPES: Record<ArchetypeKey, Archetype> = {
       { hex: "#C6A15B", name: "Antique Gold" }
     ],
     articleSlug: "smudged-kohl-oxblood-lips-tutorial",
-    articleLabel: "The Smudged Kohl & Oxblood Lip"
+    articleLabel: "The Smudged Kohl & Oxblood Lip",
+    dossier: {
+      title: "The Library Siren · A Dossier on Seduction by Footnote",
+      dek: "Nine pages on unfixed kohl, silk at the throat and the archive you wear rather than cite.",
+      chapters: [
+        {
+          heading: "Kohl on the tightline only",
+          note: "The diffusion window — how long you have before the pencil sets, and what to use."
+        },
+        {
+          heading: "Softening the shoulder line",
+          note: "Why a velvet blazer reads academic and a padded shoulder reads corporate."
+        },
+        {
+          heading: "Ink, gold-warmed",
+          note: "Building the two-tone palette that lets antique gold sit beside black without glare."
+        },
+        {
+          heading: "Archive sourcing",
+          note: "Second-hand couture, catalogued by weight and closure rather than by label."
+        },
+        {
+          heading: "The watch worn loose",
+          note: "Proportion at the wrist: case diameter against bone, and the strap you replace first."
+        }
+      ],
+      keyPieces: [
+        { label: "Ivory silk poet blouse", note: "Cuff detail, one button left open, sleeve worn pushed" },
+        { label: "Deep wine velvet blazer", note: "Unstructured, single-breasted, unlined sleeve head" },
+        { label: "Pleated wide-leg wool trouser", note: "High waist, drape tested at 320gsm" },
+        { label: "Man's gold watch", note: "Worn loose over the cuff — the house's least quiet piece" }
+      ],
+      care: "Silk is hand-washed cold and dried flat, away from light; velvet is stored on a padded hanger with nothing touching the nap."
+    }
   },
   "crimson-heiress": {
     key: "crimson-heiress",
@@ -117,7 +199,40 @@ export const ARCHETYPES: Record<ArchetypeKey, Archetype> = {
       { hex: "#C6A15B", name: "Antique Gold" }
     ],
     articleSlug: "vamp-romantic-capsule-wardrobe",
-    articleLabel: "The 12-Piece Vamp Romantic Capsule"
+    articleLabel: "The 12-Piece Vamp Romantic Capsule",
+    dossier: {
+      title: "The Crimson Heiress · A Dossier on a Portfolio Held Heavily",
+      dek: "Nine pages on bias-cut satin, unlacquered hardware and the 70/20/10 arithmetic of a wardrobe that behaves like capital.",
+      chapters: [
+        {
+          heading: "The 70/20/10 palette",
+          note: "Structure, depth, permitted brightness — with the exact hex references."
+        },
+        {
+          heading: "Bias-cut satin, audited",
+          note: "Weight, lining and stretch recovery: the three numbers that decide whether a slip lasts."
+        },
+        {
+          heading: "Hardware, unlacquered",
+          note: "Why gold that patinates reads older money than gold that shines."
+        },
+        {
+          heading: "Cost per wear across two markets",
+          note: "The same garment priced in USD and GBP, divided by the wears it will actually get."
+        },
+        {
+          heading: "The belt that cinches nothing",
+          note: "Placement, drop and the length where a signet belt finally stops looking like a mistake."
+        }
+      ],
+      keyPieces: [
+        { label: "Bias-cut oxblood midi", note: "Heavy satin, #6E1423, lined to match — never contrast" },
+        { label: "Beltless cavalry coat", note: "Structured shoulder, no waist seam, worn open at dusk" },
+        { label: "Oxblood horsebit loafer", note: "Cordovan finish; ribbed cashmere sock from October" },
+        { label: "Structured top-handle bag", note: "Croc-embossed, crook of the arm, hardware aged" }
+      ],
+      care: "Satin is dry-cleaned only; shoes are rested 48 hours between wears and treed overnight, which is what keeps a cordovan finish from cracking."
+    }
   },
   "thorned-muse": {
     key: "thorned-muse",
@@ -142,7 +257,40 @@ export const ARCHETYPES: Record<ArchetypeKey, Archetype> = {
       { hex: "#EDE4D0", name: "Parchment" }
     ],
     articleSlug: "the-3-piece-british-autumn-formula",
-    articleLabel: "The 3-Piece British Autumn Formula"
+    articleLabel: "The 3-Piece British Autumn Formula",
+    dossier: {
+      title: "The Thorned Muse · A Dossier on Being Beautifully Ungovernable",
+      dek: "Nine pages on unfinished edges, Chantilly against matte wool, and getting dressed in the dark.",
+      chapters: [
+        {
+          heading: "The unfinished hem",
+          note: "Which edges may be left raw, and the two seams that never should be."
+        },
+        {
+          heading: "Lace against matte",
+          note: "Chantilly weight and the wool it must argue with — texture, not pattern."
+        },
+        {
+          heading: "A ribbon at the throat",
+          note: "Width, fibre and the knot that survives a whole evening outdoors."
+        },
+        {
+          heading: "Dressing in the dark",
+          note: "A five-piece floor plan so nothing has to be seen to be chosen."
+        },
+        {
+          heading: "Brass, mismatched",
+          note: "How to wear two unlacquered rings without either looking accidental."
+        }
+      ],
+      keyPieces: [
+        { label: "Chantilly-trimmed camisole", note: "Silk body, lace at the neckline only" },
+        { label: "Oversized charcoal coat", note: "Shoulder dropped by 2cm, hem unpressed, wool at 480gsm" },
+        { label: "Unpressed pleated trouser", note: "Store on a clip hanger to keep the pleat honest" },
+        { label: "Mismatched brass rings", note: "One wide, one thin — never the same hand twice" }
+      ],
+      care: "Lace is washed in a mesh bag with pH-neutral soap; wool is aired outside in cool weather and only dry-cleaned when the nap flattens."
+    }
   }
 };
 

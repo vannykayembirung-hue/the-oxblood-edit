@@ -3,6 +3,14 @@
 -- Run this whole file in the Neon SQL Editor. Safe to re-run: the seed uses
 -- "on conflict (slug) do nothing", and the trailing backfill updates repair any
 -- rows created before the 16:9 Dark Elegance branding landed.
+--
+-- What lives here, in order:
+--   1. articles / products / affiliate_links / users / subscribers
+--   2. the nine pillar stories of the editorial run (UK, US and both) with
+--      16:9 covers and in-body plates, staggered one per week
+--   3. a one-off schedule correction: every pillar pinned to a house section
+--      (style, capsule, beauty, interiors, craft) and to its staggered date
+--   4. a legacy backfill: covers, plates, meta title and meta description
 -- ============================================================================
 
 create extension if not exists pgcrypto;
@@ -68,6 +76,34 @@ create table if not exists users (
   email text unique not null,
   password text not null
 );
+
+-- ----------------------------------------------------------------------------
+-- Newsletter subscribers — one row per consent, not per address.
+--
+-- consent_text / consent_version / consented_at are the UK GDPR Article 7(1)
+-- evidence (what the reader agreed to, in which wording, when, and from which
+-- surface); unsubscribed_at keeps the withdrawal on record so the desk can show
+-- it stopped writing. Nothing is ever seeded here: an invented address would be
+-- a fabricated consent record.
+-- ----------------------------------------------------------------------------
+create table if not exists subscribers (
+  id uuid primary key default gen_random_uuid(),
+  email text unique not null,
+  archetype text,
+  source text default 'unknown',
+  status text default 'pending',
+  consent_text text,
+  consent_version text,
+  consented_at timestamp default now(),
+  confirmed_at timestamp,
+  unsubscribed_at timestamp,
+  confirm_token text unique,
+  unsubscribe_token text unique,
+  ip_hash text
+);
+
+create index if not exists subscribers_status_idx on subscribers (status);
+create index if not exists subscribers_consented_at_idx on subscribers (consented_at desc);
 
 -- ----------------------------------------------------------------------------
 -- Editorial seed — every story carries a strict 16:9 cover (public/images/
@@ -160,6 +196,70 @@ insert into articles (slug, title, excerpt, cover_image, status, category, meta_
         <h2>Four Numbers Before Any Silhouette</h2><p>A dark-romantic wardrobe is bought with a calculator as much as an eye. Wool percentage, fabric weight in grams per square metre, lining composition, and the ratio of buttons to buttonholes will tell you more than a photograph ever will.</p><ul><li><strong>75% wool minimum</strong> in outerwear; below that, rain wins.</li><li><strong>320gsm and above</strong> for a coat that holds a line without interfacing.</li><li><strong>Viscose or cotton lining</strong> dyed to the shell, never contrast polyester.</li><li><strong>Horn or corozo buttons</strong>; plastic shines, and shine is the enemy of velvet.</li></ul><h2>The Candlelight Test</h2><p>Take the garment into a dim room before you decide anything. Dark elegance is engineered for low light: if the cloth goes flat beside a candle, it was bought for the shop floor.</p>'
 )
 on conflict (slug) do nothing;
+-- ----------------------------------------------------------------------------
+-- Pillars VIII and IX: the US tail of the editorial run and the fit file that
+-- maps one oxblood formula across US 0-16 and UK 4-20. Both carry a strict 16:9
+-- cover plus in-body plates, exactly as the seven stories above do.
+-- ----------------------------------------------------------------------------
+insert into articles (slug, title, excerpt, cover_image, status, category, meta_title, meta_description, content_html, created_at) values
+(
+  'the-us-oxblood-edit-american-autumn-tailoring',
+  'The US Oxblood Edit: American Autumn Tailoring in Three Budgets',
+  'Overheated rooms, sharp sidewalks: the US autumn edit in three budgets.',
+  '/images/editorial/villainess-hero-16x9.jpg',
+  'published',
+  'style',
+  'The US Oxblood Edit: American Autumn Tailoring in Three Budgets',
+  'How to build a US autumn wardrobe that survives heated interiors and a cold sidewalk: coat weights, knit gauges and three transparent budgets.',
+  '<figure class="plate plate--1 aspect-video"><img src="/images/editorial/villainess-hero-16x9.jpg" alt="A woman seen from behind in a floor-length black velvet cape lined with oxblood satin, standing in a candlelit Georgian gallery" width="1920" height="1080" loading="lazy" decoding="async" class="aspect-video" /><figcaption>Plate I · The long gallery, nine o''clock. Velvet cut to the floor, oxblood satin lining let slip one inch past the hem</figcaption></figure><h2>Two Climates, One Coat</h2><p>An American autumn is not a British one with a different flag. It is overheated interiors against a sharp evening drop: a wardrobe that has to survive 24&deg;C at two in the afternoon and 9&deg;C on the sidewalk at ten, without a change of clothes. The house answer is still the three-piece spine&mdash;coat, knit, shoe&mdash;weighted differently.</p><h2>1. The Coat, Built to Be Taken Off</h2><p>Choose double-faced wool in the 420&ndash;480gsm band rather than the 520gsm British coat. Above that weight an American autumn coat becomes a taxi coat; below 400gsm it stops holding a shoulder line in a cold wind. Espresso, charcoal, or oxblood #6E1423.</p><h2>2. The Knit: The Variable Nobody Prices</h2><p>Air conditioning is the American variable. A fine-gauge merino turtleneck under a blazer is the layer that comes off and still reads as intentional at the table; a chunky knit under the same blazer reads as luggage.</p><h2>3. The Shoe: Leather Against Granite</h2><p>Oxblood leather takes a New York pavement the way it takes a London square, with one amendment: a 25mm lug sole for the November ice, and no more&mdash;past 40mm a lugged sole stops being a loafer and starts being equipment.</p><figure class="plate plate--2 aspect-video"><img src="/images/editorial/capsule-wardrobe-16x9.jpg" alt="Twelve curated garments in jet black wool, oxblood velvet and ivory silk on an antique valet stand in a candlelit panelled room" width="1920" height="1080" loading="lazy" decoding="async" class="aspect-video" /><figcaption>Plate II · Twelve pieces on one stand: the chromatic spine is jet, oxblood, parchment and antique gold</figcaption></figure><h2>Three Budgets, One Spine</h2><ul><li><strong>Under $250:</strong> a single 80% wool coat taken to a tailor for the shoulder. Sixty dollars of alteration beats four hundred dollars of fabric.</li><li><strong>$250&ndash;$800:</strong> the mid-tier coat, one merino turtleneck, one corrected-grain oxblood loafer.</li><li><strong>Investment:</strong> 460gsm double-faced wool with a hand-finished hem, and a cordovan loafer you resole rather than replace.</li></ul><p>Three pieces, two climates, one chromatic spine. Only the weight changes with the flag&mdash;never the arithmetic.</p>',
+  '2026-10-12 07:30:00'
+),
+(
+  'the-fit-file-us-0-16-uk-4-20',
+  'The Fit File: The Same Oxblood Formula in US 0–16 and UK 4–20',
+  'Flat-measured garment data for one formula, US 0–16 against UK 4–20.',
+  '/images/editorial/fibre-label-atelier-16x9.jpg',
+  'published',
+  'craft',
+  'The Fit File: US 0–16 and UK 4–20 in the Same Oxblood Formula',
+  'Flat-measured garment data, a US 0–16 to UK 4–20 fit file, and the four places the same oxblood formula is cut differently between markets.',
+  '<figure class="plate plate--1 aspect-video"><img src="/images/editorial/fibre-label-atelier-16x9.jpg" alt="A heritage tailoring atelier with bolts of double-faced wool, cashmere and silk, shears and tape on a worn oak bench" width="1920" height="1080" loading="lazy" decoding="async" class="aspect-video" /><figcaption>Plate I · Inside the label: 75% wool minimum, 320gsm and up, and a lining dyed to the same oxblood</figcaption></figure><h2>The +4 Rule, and Why It Is Not Enough</h2><p>A US 6 is a UK 10&mdash;an offset of four that gets a reader onto the right rack and then abandons her there. Two houses producing the same nominal UK 10 will still differ by three centimetres at the waist and six at the sleeve, because a size label is a marketing decision and a measurement is not.</p><h2>The Fit File, Flat-Measured</h2><table><thead><tr><th>Garment</th><th>US</th><th>UK</th><th>Bust / chest</th><th>Waist</th><th>Hip</th></tr></thead><tbody><tr><td>Bias satin midi</td><td>0&ndash;2</td><td>4&ndash;6</td><td>81 cm / 31.9 in</td><td>63 cm / 24.8 in</td><td>89 cm / 35.0 in</td></tr><tr><td>Bias satin midi</td><td>4&ndash;6</td><td>8&ndash;10</td><td>88 cm / 34.6 in</td><td>70 cm / 27.6 in</td><td>96 cm / 37.8 in</td></tr><tr><td>Bias satin midi</td><td>8&ndash;10</td><td>12&ndash;14</td><td>95 cm / 37.4 in</td><td>77 cm / 30.3 in</td><td>103 cm / 40.6 in</td></tr><tr><td>Bias satin midi</td><td>12&ndash;14</td><td>16&ndash;18</td><td>104 cm / 40.9 in</td><td>86 cm / 33.9 in</td><td>112 cm / 44.1 in</td></tr><tr><td>Bias satin midi</td><td>16</td><td>20</td><td>112 cm / 44.1 in</td><td>94 cm / 37.0 in</td><td>120 cm / 47.2 in</td></tr><tr><td>Double-faced coat</td><td>4&ndash;6</td><td>8&ndash;10</td><td>92 cm / 36.2 in</td><td>76 cm / 29.9 in</td><td>98 cm / 38.6 in</td></tr><tr><td>Double-faced coat</td><td>12&ndash;14</td><td>16&ndash;18</td><td>108 cm / 42.5 in</td><td>92 cm / 36.2 in</td><td>114 cm / 44.9 in</td></tr></tbody></table><h2>How the File Was Measured</h2><p>Every garment is laid flat twenty-four hours after a wear, measured tape-to-tape at three points, and averaged across two units of the same size wherever both were bought. Sleeves are measured from the shoulder seam to the cuff, hems from the waist seam for trousers and from the shoulder for coats. The desk buys its own garments, keeps the receipts, and returns what fails the audit&mdash;returns are disclosed, with the reason, in the house standards.</p><figure class="plate plate--2 aspect-video"><img src="/images/editorial/villainess-detail-16x9.jpg" alt="Detail of oxblood silk satin against black chantilly lace with an antique gold signet ring resting on the fabric" width="1920" height="1080" loading="lazy" decoding="async" class="aspect-video" /><figcaption>Plate II · The three anchor textures: bias-cut oxblood satin, Chantilly lace, antique gold hardware worn matte</figcaption></figure><h2>Where the Formula Changes Between Markets</h2><ul><li><strong>Sleeve length:</strong> US runs are cut about 1.5cm longer; hem the cuff rather than alter the shoulder if you sit between sizes.</li><li><strong>Rise:</strong> UK tailoring sits roughly 2cm higher in the same waist size&mdash;belt the UK pair lower rather than hauling the US pair up.</li><li><strong>Coat hem:</strong> a UK mid-calf falls mid-calf in the US only when it is shortened below the waist seam, never at the hem itself.</li><li><strong>Lining:</strong> identical in both markets and dyed to the shell&mdash;the one number that never changes.</li></ul><p>Take the file into the fitting room. It is a better use of an afternoon than a mirror and a hope.</p>',
+  '2026-10-14 07:30:00'
+)
+on conflict (slug) do nothing;
+
+-- ----------------------------------------------------------------------------
+-- The nine-pillar schedule — one-off correction for the editorial run.
+--
+-- Each pillar is pinned to exactly one house section (style, capsule, beauty,
+-- interiors, craft) and to its staggered publication date, so the journal read
+-- newest-first is a weekly run rather than a single day's dump. The guard makes
+-- this a no-op once applied: it only rewrites a pillar whose section, date or
+-- draft status still differs from the schedule. If you have since re-edited a
+-- pillar in the CMS, delete this block before re-running the file.
+-- ----------------------------------------------------------------------------
+update articles a
+set
+  category = v.category,
+  created_at = v.published_at,
+  status = case when v.publish and a.status = 'draft' then 'published' else a.status end
+from (values
+  ('how-to-dress-like-the-villainess-dark-romance-outfits', 'style',     timestamp '2026-08-24 07:30:00', true),
+  ('the-british-layering-code-wool-merino-silk',           'style',     timestamp '2026-08-31 07:30:00', true),
+  ('the-3-piece-british-autumn-formula',                   'style',     timestamp '2026-09-07 07:30:00', true),
+  ('vamp-romantic-capsule-wardrobe',                       'capsule',   timestamp '2026-09-14 07:30:00', true),
+  ('smudged-kohl-oxblood-lips-tutorial',                   'beauty',    timestamp '2026-09-21 07:30:00', true),
+  ('dark-elegance-dining-room-ideas',                      'interiors', timestamp '2026-09-28 07:30:00', true),
+  ('reading-the-fibre-label-in-a-dark-atelier',            'craft',     timestamp '2026-10-05 07:30:00', true),
+  ('the-us-oxblood-edit-american-autumn-tailoring',        'style',     timestamp '2026-10-12 07:30:00', true),
+  ('the-fit-file-us-0-16-uk-4-20',                         'craft',     timestamp '2026-10-14 07:30:00', true)
+) as v(slug, category, published_at, publish)
+where a.slug = v.slug
+  and (
+    a.category is distinct from v.category
+    or a.created_at::date is distinct from v.published_at::date
+    or (v.publish and a.status = 'draft')
+  );
 
 -- ----------------------------------------------------------------------------
 -- Backfill for rows that predate Dark Elegance: restores the 16:9 cover and the

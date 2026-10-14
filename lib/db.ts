@@ -2,6 +2,13 @@ import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 import * as schema from "@/drizzle/schema";
 import { sanitizeEditorialHtml, slugify } from "@/lib/sanitize";
+import { normalizeCategory } from "@/lib/editorial-taxonomy";
+import {
+  NEWSLETTER_CONSENT_TEXT,
+  NEWSLETTER_CONSENT_VERSION,
+  normalizeEmail
+} from "@/lib/newsletter";
+import { createToken } from "@/lib/newsletter-server";
 import {
   EDITORIAL_PLATES,
   getArticleEditorialLayout,
@@ -187,10 +194,46 @@ export interface AffiliateLinkRecord {
   clicks: number;
 }
 
+/**
+ * A newsletter subscriber, modelled for UK GDPR accountability (Art. 5(2)).
+ *
+ * The row is the consent record: the exact wording shown, its version, the
+ * moment of opt-in, the surface it came from and a salted IP digest. Withdrawal
+ * is a state change rather than a delete so the desk can prove it stopped
+ * mailing; hard deletion stays available from `/admin` on request.
+ */
+export interface SubscriberRecord {
+  id: string;
+  email: string;
+  /** Dossier requested with the reading, if any. */
+  archetype: string | null;
+  /** Where the opt-in happened: villainess-quiz, homepage, footer, … */
+  source: string;
+  status: "pending" | "confirmed" | "unsubscribed";
+  consent_text: string;
+  consent_version: string;
+  consented_at: string;
+  confirmed_at: string | null;
+  unsubscribed_at: string | null;
+  confirm_token: string;
+  unsubscribe_token: string;
+  ip_hash: string | null;
+}
+
+export interface SubscriberStats {
+  total: number;
+  confirmed: number;
+  pending: number;
+  unsubscribed: number;
+  byArchetype: { archetype: string; count: number }[];
+  last7Days: number;
+}
+
 interface LocalStoreData {
   articles: ArticleRecord[];
   products: ProductRecord[];
   affiliate_links: AffiliateLinkRecord[];
+  subscribers: SubscriberRecord[];
 }
 
 /** Convenience for the seed bodies below: an inline 16:9 plate with a roman caption. */
@@ -213,7 +256,7 @@ const DEFAULT_SEED_DATA: LocalStoreData = {
         "Master the oxblood satin, structured wool and black velvet silhouette with 7 intentional formulas across three budgets.",
       category: "style",
       status: "published",
-      created_at: "2026-10-10T18:00:00.000Z"
+      created_at: "2026-08-24T07:30:00.000Z"
     },
     {
       id: "a1000000-0000-4000-8000-000000000002",
@@ -229,7 +272,7 @@ const DEFAULT_SEED_DATA: LocalStoreData = {
         "A rain-tested British autumn uniform combining tailored outerwear, fine merino knitwear, and oxblood leather loafers.",
       category: "style",
       status: "published",
-      created_at: "2026-10-11T14:30:00.000Z"
+      created_at: "2026-09-07T07:30:00.000Z"
     },
     {
       id: "a1000000-0000-4000-8000-000000000003",
@@ -245,7 +288,7 @@ const DEFAULT_SEED_DATA: LocalStoreData = {
         "Build 36 cohesive dark-romantic outfits from 12 foundational garments in oxblood, jet black, and parchment cream.",
       category: "capsule",
       status: "published",
-      created_at: "2026-10-12T10:15:00.000Z"
+      created_at: "2026-09-14T07:30:00.000Z"
     },
     {
       id: "a1000000-0000-4000-8000-000000000004",
@@ -261,7 +304,7 @@ const DEFAULT_SEED_DATA: LocalStoreData = {
         "Achieve lived-in kohl liner and velvet-matte oxblood lips with luminous satin skin.",
       category: "beauty",
       status: "published",
-      created_at: "2026-10-13T09:00:00.000Z"
+      created_at: "2026-09-21T07:30:00.000Z"
     },
     {
       id: "a1000000-0000-4000-8000-000000000005",
@@ -276,8 +319,8 @@ const DEFAULT_SEED_DATA: LocalStoreData = {
       meta_description:
         "Transform your dining space with oxblood limewash walls, unlacquered brass candlesticks, and Belgian linen.",
       category: "interiors",
-      status: "draft",
-      created_at: "2026-10-13T16:00:00.000Z"
+      status: "published",
+      created_at: "2026-09-28T07:30:00.000Z"
     },
     {
       id: "a1000000-0000-4000-8000-000000000006",
@@ -293,7 +336,7 @@ const DEFAULT_SEED_DATA: LocalStoreData = {
         "The silk-merino-wool sequence that survives a British autumn and reads as intent in a New York winter.",
       category: "style",
       status: "published",
-      created_at: "2026-10-14T07:30:00.000Z"
+      created_at: "2026-08-31T07:30:00.000Z"
     },
     {
       id: "a1000000-0000-4000-8000-000000000007",
@@ -309,7 +352,39 @@ const DEFAULT_SEED_DATA: LocalStoreData = {
         "How to audit wool percentage, GSM, lining and hardware before committing to a dark-romantic garment.",
       category: "craft",
       status: "published",
-      created_at: "2026-10-14T09:10:00.000Z"
+      created_at: "2026-10-05T07:30:00.000Z"
+    },
+    {
+      id: "a1000000-0000-4000-8000-000000000008",
+      slug: "the-us-oxblood-edit-american-autumn-tailoring",
+      title: "The US Oxblood Edit: American Autumn Tailoring in Three Budgets",
+      excerpt: "Overheated rooms, sharp sidewalks: the US autumn edit in three budgets.",
+      cover_image: EDITORIAL_PLATES.villainessHero.src,
+      content_html: `
+        ${articleFigure("villainessHero", 0)}
+        <h2>Two Climates, One Coat</h2><p>An American autumn is not a British one with a different flag. It is overheated interiors against a sharp evening drop: a wardrobe that has to survive 24&deg;C at two in the afternoon and 9&deg;C on the sidewalk at ten, without a change of clothes. The house answer is still the three-piece spine&mdash;coat, knit, shoe&mdash;weighted differently.</p><h2>1. The Coat, Built to Be Taken Off</h2><p>Choose double-faced wool in the 420&ndash;480gsm band rather than the 520gsm British coat. Above that weight an American autumn coat becomes a taxi coat; below 400gsm it stops holding a shoulder line in a cold wind. Espresso, charcoal, or oxblood #6E1423.</p><h2>2. The Knit: The Variable Nobody Prices</h2><p>Air conditioning is the American variable. A fine-gauge merino turtleneck under a blazer is the layer that comes off and still reads as intentional at the table; a chunky knit under the same blazer reads as luggage.</p><h2>3. The Shoe: Leather Against Granite</h2><p>Oxblood leather takes a New York pavement the way it takes a London square, with one amendment: a 25mm lug sole for the November ice, and no more&mdash;past 40mm a lugged sole stops being a loafer and starts being equipment.</p>${articleFigure("capsuleWardrobe", 1)}<h2>Three Budgets, One Spine</h2><ul><li><strong>Under $250:</strong> a single 80% wool coat taken to a tailor for the shoulder. Sixty dollars of alteration beats four hundred dollars of fabric.</li><li><strong>$250&ndash;$800:</strong> the mid-tier coat, one merino turtleneck, one corrected-grain oxblood loafer.</li><li><strong>Investment:</strong> 460gsm double-faced wool with a hand-finished hem, and a cordovan loafer you resole rather than replace.</li></ul><p>Three pieces, two climates, one chromatic spine. Only the weight changes with the flag&mdash;never the arithmetic.</p>`,
+      meta_title: "The US Oxblood Edit: American Autumn Tailoring in Three Budgets",
+      meta_description:
+        "How to build a US autumn wardrobe that survives heated interiors and a cold sidewalk: coat weights, knit gauges and three transparent budgets.",
+      category: "style",
+      status: "published",
+      created_at: "2026-10-12T07:30:00.000Z"
+    },
+    {
+      id: "a1000000-0000-4000-8000-000000000009",
+      slug: "the-fit-file-us-0-16-uk-4-20",
+      title: "The Fit File: The Same Oxblood Formula in US 0–16 and UK 4–20",
+      excerpt: "Flat-measured garment data for one formula, US 0–16 against UK 4–20.",
+      cover_image: EDITORIAL_PLATES.fibreLabelAtelier.src,
+      content_html: `
+        ${articleFigure("fibreLabelAtelier", 0)}
+        <h2>The +4 Rule, and Why It Is Not Enough</h2><p>A US 6 is a UK 10&mdash;an offset of four that gets a reader onto the right rack and then abandons her there. Two houses producing the same nominal UK 10 will still differ by three centimetres at the waist and six at the sleeve, because a size label is a marketing decision and a measurement is not.</p><h2>The Fit File, Flat-Measured</h2><table><thead><tr><th>Garment</th><th>US</th><th>UK</th><th>Bust / chest</th><th>Waist</th><th>Hip</th></tr></thead><tbody><tr><td>Bias satin midi</td><td>0&ndash;2</td><td>4&ndash;6</td><td>81 cm / 31.9 in</td><td>63 cm / 24.8 in</td><td>89 cm / 35.0 in</td></tr><tr><td>Bias satin midi</td><td>4&ndash;6</td><td>8&ndash;10</td><td>88 cm / 34.6 in</td><td>70 cm / 27.6 in</td><td>96 cm / 37.8 in</td></tr><tr><td>Bias satin midi</td><td>8&ndash;10</td><td>12&ndash;14</td><td>95 cm / 37.4 in</td><td>77 cm / 30.3 in</td><td>103 cm / 40.6 in</td></tr><tr><td>Bias satin midi</td><td>12&ndash;14</td><td>16&ndash;18</td><td>104 cm / 40.9 in</td><td>86 cm / 33.9 in</td><td>112 cm / 44.1 in</td></tr><tr><td>Bias satin midi</td><td>16</td><td>20</td><td>112 cm / 44.1 in</td><td>94 cm / 37.0 in</td><td>120 cm / 47.2 in</td></tr><tr><td>Double-faced coat</td><td>4&ndash;6</td><td>8&ndash;10</td><td>92 cm / 36.2 in</td><td>76 cm / 29.9 in</td><td>98 cm / 38.6 in</td></tr><tr><td>Double-faced coat</td><td>12&ndash;14</td><td>16&ndash;18</td><td>108 cm / 42.5 in</td><td>92 cm / 36.2 in</td><td>114 cm / 44.9 in</td></tr></tbody></table><h2>How the File Was Measured</h2><p>Every garment is laid flat twenty-four hours after a wear, measured tape-to-tape at three points, and averaged across two units of the same size wherever both were bought. Sleeves are measured from the shoulder seam to the cuff, hems from the waist seam for trousers and from the shoulder for coats. The desk buys its own garments, keeps the receipts, and returns what fails the audit&mdash;returns are disclosed, with the reason, in the house standards.</p>${articleFigure("villainessDetail", 1)}<h2>Where the Formula Changes Between Markets</h2><ul><li><strong>Sleeve length:</strong> US runs are cut about 1.5cm longer; hem the cuff rather than alter the shoulder if you sit between sizes.</li><li><strong>Rise:</strong> UK tailoring sits roughly 2cm higher in the same waist size&mdash;belt the UK pair lower rather than hauling the US pair up.</li><li><strong>Coat hem:</strong> a UK mid-calf falls mid-calf in the US only when it is shortened below the waist seam, never at the hem itself.</li><li><strong>Lining:</strong> identical in both markets and dyed to the shell&mdash;the one number that never changes.</li></ul><p>Take the file into the fitting room. It is a better use of an afternoon than a mirror and a hope.</p>`,
+      meta_title: "The Fit File: US 0–16 and UK 4–20 in the Same Oxblood Formula",
+      meta_description:
+        "Flat-measured garment data, a US 0–16 to UK 4–20 fit file, and the four places the same oxblood formula is cut differently between markets.",
+      category: "craft",
+      status: "published",
+      created_at: "2026-10-14T07:30:00.000Z"
     }
   ],
   products: [
@@ -361,7 +436,10 @@ const DEFAULT_SEED_DATA: LocalStoreData = {
       image: null,
       clicks: 12
     }
-  ]
+  ],
+  // Never seeded with invented addresses: the Subscribers tab in `/admin` starts
+  // empty and only ever shows consent records the desk actually collected.
+  subscribers: []
 };
 
 const LOCAL_STORE_PATH = path.join(process.cwd(), ".data", "local-store.json");
@@ -376,7 +454,10 @@ function readLocalStore(): LocalStoreData {
         products: Array.isArray(parsed.products) ? parsed.products : DEFAULT_SEED_DATA.products,
         affiliate_links: Array.isArray(parsed.affiliate_links)
           ? parsed.affiliate_links
-          : DEFAULT_SEED_DATA.affiliate_links
+          : DEFAULT_SEED_DATA.affiliate_links,
+        subscribers: Array.isArray(parsed.subscribers)
+          ? parsed.subscribers.map(normalizeSubscriberRow)
+          : DEFAULT_SEED_DATA.subscribers
       };
     }
   } catch (err) {
@@ -407,7 +488,8 @@ function normalizeArticleRow(row: Record<string, unknown>): ArticleRecord {
     content_html: row.content_html != null ? String(row.content_html) : null,
     meta_title: row.meta_title != null ? String(row.meta_title) : null,
     meta_description: row.meta_description != null ? String(row.meta_description) : null,
-    category: String(row.category ?? "style"),
+    // Legacy categories (`home`, `wardrobe`, `guides`, …) resolve to a pillar.
+    category: normalizeCategory(row.category != null ? String(row.category) : null),
     status: row.status === "published" ? "published" : "draft",
     created_at:
       row.created_at instanceof Date
@@ -440,6 +522,43 @@ function normalizeAffiliateRow(row: Record<string, unknown>): AffiliateLinkRecor
     price_uk: row.price_uk != null ? String(row.price_uk) : null,
     image: row.image != null ? String(row.image) : null,
     clicks: Number(row.clicks ?? 0)
+  };
+}
+
+function normalizeSubscriberRow(
+  row: Record<string, unknown> | SubscriberRecord
+): SubscriberRecord {
+  const rawStatus = String(row.status ?? "pending");
+  const status: SubscriberRecord["status"] =
+    rawStatus === "confirmed" || rawStatus === "unsubscribed" ? rawStatus : "pending";
+
+  return {
+    id: String(row.id ?? ""),
+    email: normalizeEmail(row.email),
+    archetype: row.archetype != null && String(row.archetype) ? String(row.archetype) : null,
+    source: String(row.source ?? "unknown"),
+    status,
+    consent_text: String(row.consent_text ?? NEWSLETTER_CONSENT_TEXT),
+    consent_version: String(row.consent_version ?? NEWSLETTER_CONSENT_VERSION),
+    consented_at:
+      row.consented_at instanceof Date
+        ? row.consented_at.toISOString()
+        : String(row.consented_at ?? new Date().toISOString()),
+    confirmed_at:
+      row.confirmed_at == null
+        ? null
+        : row.confirmed_at instanceof Date
+          ? row.confirmed_at.toISOString()
+          : String(row.confirmed_at),
+    unsubscribed_at:
+      row.unsubscribed_at == null
+        ? null
+        : row.unsubscribed_at instanceof Date
+          ? row.unsubscribed_at.toISOString()
+          : String(row.unsubscribed_at),
+    confirm_token: String(row.confirm_token ?? ""),
+    unsubscribe_token: String(row.unsubscribe_token ?? ""),
+    ip_hash: row.ip_hash != null ? String(row.ip_hash) : null
   };
 }
 
@@ -571,7 +690,7 @@ export async function saveArticle(input: UpsertArticleInput): Promise<ArticleRec
   const contentHtml = sanitizeEditorialHtml(input.content_html || "");
   const metaTitle = input.meta_title?.trim() || null;
   const metaDescription = input.meta_description?.trim() || null;
-  const category = input.category?.trim() || "style";
+  const category = normalizeCategory(input.category);
   const status: "published" | "draft" = input.status === "published" ? "published" : "draft";
 
   if (sql) {
@@ -884,4 +1003,292 @@ export async function recordAffiliateClick(id: string): Promise<string | null> {
   link.clicks = (link.clicks || 0) + 1;
   writeLocalStore(store);
   return link.url;
+}
+
+/* ------------------------------------------------------------------------- */
+/*  Newsletter subscribers — consent records for the Sunday Dispatch          */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Every subscriber read selects its columns explicitly — the Neon HTTP driver in
+ * use here has no `sql.unsafe` helper, and one shared column list keeps the row
+ * shape identical between PostgreSQL and the local JSON store.
+ */
+
+export interface SubscribeInput {
+  email: string;
+  /** Dossier requested alongside the opt-in (villainess archetype key). */
+  archetype?: string | null;
+  source: string;
+  /** Consent evidence. The API only calls this once consent has been asserted. */
+  consentText?: string;
+  consentVersion?: string;
+  ipHash?: string | null;
+}
+
+export interface SubscribeResult {
+  subscriber: SubscriberRecord;
+  /** True when this call created the row; false when it updated an existing one. */
+  created: boolean;
+  /** True when the address had already confirmed — the form stays silent. */
+  alreadyConfirmed: boolean;
+}
+
+export async function subscribeToNewsletter(input: SubscribeInput): Promise<SubscribeResult> {
+  const email = normalizeEmail(input.email);
+  const archetype = input.archetype?.trim() || null;
+  const source = input.source.trim() || "unknown";
+  const consentText = input.consentText || NEWSLETTER_CONSENT_TEXT;
+  const consentVersion = input.consentVersion || NEWSLETTER_CONSENT_VERSION;
+  const ipHash = input.ipHash ?? null;
+  const now = new Date().toISOString();
+
+  if (sql) {
+    const existing = (await sql`
+      select id, email, archetype, source, status, consent_text, consent_version, consented_at, confirmed_at, unsubscribed_at, confirm_token, unsubscribe_token, ip_hash from subscribers where lower(email) = ${email} limit 1
+    `) as Record<string, unknown>[];
+
+    if (existing[0]) {
+      const current = normalizeSubscriberRow(existing[0]);
+      const rows = (await sql`
+        update subscribers
+        set
+          archetype = coalesce(${archetype}, archetype),
+          source = ${source},
+          consent_text = ${consentText},
+          consent_version = ${consentVersion},
+          consented_at = ${now},
+          ip_hash = coalesce(${ipHash}, ip_hash),
+          status = case when status = 'confirmed' then 'confirmed' else 'pending' end,
+          unsubscribed_at = null
+        where id = ${current.id}
+        returning id, email, archetype, source, status, consent_text, consent_version, consented_at, confirmed_at, unsubscribed_at, confirm_token, unsubscribe_token, ip_hash
+      `) as Record<string, unknown>[];
+      const subscriber = normalizeSubscriberRow(rows[0]);
+      return {
+        subscriber,
+        created: false,
+        alreadyConfirmed: subscriber.status === "confirmed"
+      };
+    }
+
+    const rows = (await sql`
+      insert into subscribers (email, archetype, source, status, consent_text, consent_version, consented_at, confirm_token, unsubscribe_token, ip_hash)
+      values (${email}, ${archetype}, ${source}, 'pending', ${consentText}, ${consentVersion}, ${now}, ${createToken()}, ${createToken()}, ${ipHash})
+      on conflict (email) do update set
+        archetype = coalesce(excluded.archetype, subscribers.archetype),
+        source = excluded.source,
+        consent_text = excluded.consent_text,
+        consent_version = excluded.consent_version,
+        consented_at = excluded.consented_at
+      returning id, email, archetype, source, status, consent_text, consent_version, consented_at, confirmed_at, unsubscribed_at, confirm_token, unsubscribe_token, ip_hash
+    `) as Record<string, unknown>[];
+
+    return { subscriber: normalizeSubscriberRow(rows[0]), created: true, alreadyConfirmed: false };
+  }
+
+  const store = readLocalStore();
+  const existingIdx = store.subscribers.findIndex((s) => s.email === email);
+  if (existingIdx >= 0) {
+    const current = store.subscribers[existingIdx];
+    const updated: SubscriberRecord = {
+      ...current,
+      archetype: archetype ?? current.archetype,
+      source,
+      consent_text: consentText,
+      consent_version: consentVersion,
+      consented_at: now,
+      ip_hash: ipHash ?? current.ip_hash,
+      status: current.status === "confirmed" ? "confirmed" : "pending",
+      unsubscribed_at: null
+    };
+    store.subscribers[existingIdx] = updated;
+    writeLocalStore(store);
+    return { subscriber: updated, created: false, alreadyConfirmed: updated.status === "confirmed" };
+  }
+
+  const created: SubscriberRecord = {
+    id: crypto.randomUUID(),
+    email,
+    archetype,
+    source,
+    status: "pending",
+    consent_text: consentText,
+    consent_version: consentVersion,
+    consented_at: now,
+    confirmed_at: null,
+    unsubscribed_at: null,
+    confirm_token: createToken(),
+    unsubscribe_token: createToken(),
+    ip_hash: ipHash
+  };
+  store.subscribers.unshift(created);
+  writeLocalStore(store);
+  return { subscriber: created, created: true, alreadyConfirmed: false };
+}
+
+export async function getSubscribers(limit?: number): Promise<SubscriberRecord[]> {
+  if (sql) {
+    try {
+      const rows = (await sql`
+        select id, email, archetype, source, status, consent_text, consent_version, consented_at, confirmed_at, unsubscribed_at, confirm_token, unsubscribe_token, ip_hash from subscribers order by consented_at desc
+      `) as Record<string, unknown>[];
+      const mapped = rows.map(normalizeSubscriberRow);
+      return typeof limit === "number" ? mapped.slice(0, limit) : mapped;
+    } catch (error) {
+      console.error("Database query failed in getSubscribers:", error);
+    }
+  }
+  const store = readLocalStore();
+  const sorted = [...store.subscribers].sort(
+    (a, b) => new Date(b.consented_at).getTime() - new Date(a.consented_at).getTime()
+  );
+  return typeof limit === "number" ? sorted.slice(0, limit) : sorted;
+}
+
+export async function getSubscriberStats(): Promise<SubscriberStats> {
+  const subscribers = await getSubscribers();
+  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+  const archetypeCounts = new Map<string, number>();
+  for (const subscriber of subscribers) {
+    if (!subscriber.archetype) continue;
+    archetypeCounts.set(subscriber.archetype, (archetypeCounts.get(subscriber.archetype) ?? 0) + 1);
+  }
+
+  return {
+    total: subscribers.length,
+    confirmed: subscribers.filter((s) => s.status === "confirmed").length,
+    pending: subscribers.filter((s) => s.status === "pending").length,
+    unsubscribed: subscribers.filter((s) => s.status === "unsubscribed").length,
+    byArchetype: [...archetypeCounts.entries()]
+      .map(([archetype, count]) => ({ archetype, count }))
+      .sort((a, b) => b.count - a.count),
+    last7Days: subscribers.filter((s) => new Date(s.consented_at).getTime() >= sevenDaysAgo).length
+  };
+}
+
+/** Confirms a double opt-in from the link in the dispatch email. */
+export async function confirmSubscriberByToken(
+  token: string
+): Promise<SubscriberRecord | null> {
+  const clean = token.trim();
+  if (!clean) return null;
+
+  if (sql) {
+    try {
+      const rows = (await sql`
+        update subscribers
+        set status = 'confirmed', confirmed_at = now()
+        where confirm_token = ${clean} and status <> 'confirmed'
+        returning id, email, archetype, source, status, consent_text, consent_version, consented_at, confirmed_at, unsubscribed_at, confirm_token, unsubscribe_token, ip_hash
+      `) as Record<string, unknown>[];
+      if (rows[0]) return normalizeSubscriberRow(rows[0]);
+
+      const already = (await sql`
+        select id, email, archetype, source, status, consent_text, consent_version, consented_at, confirmed_at, unsubscribed_at, confirm_token, unsubscribe_token, ip_hash from subscribers where confirm_token = ${clean} limit 1
+      `) as Record<string, unknown>[];
+      return already[0] ? normalizeSubscriberRow(already[0]) : null;
+    } catch (error) {
+      console.error("Failed confirming subscriber:", error);
+      return null;
+    }
+  }
+
+  const store = readLocalStore();
+  const found = store.subscribers.find((s) => s.confirm_token === clean);
+  if (!found) return null;
+  if (found.status !== "confirmed") {
+    found.status = "confirmed";
+    found.confirmed_at = new Date().toISOString();
+    found.unsubscribed_at = null;
+    writeLocalStore(store);
+  }
+  return found;
+}
+
+/** Withdrawal of consent — by token (from an email) or by address (on request). */
+export async function unsubscribeSubscriber({
+  token,
+  email
+}: {
+  token?: string | null;
+  email?: string | null;
+}): Promise<SubscriberRecord | null> {
+  const cleanToken = token?.trim() || null;
+  const cleanEmail = email ? normalizeEmail(email) : null;
+  if (!cleanToken && !cleanEmail) return null;
+  const now = new Date().toISOString();
+
+  if (sql) {
+    try {
+      const rows = (cleanToken
+        ? await sql`
+            update subscribers
+            set status = 'unsubscribed', unsubscribed_at = ${now}
+            where unsubscribe_token = ${cleanToken}
+            returning id, email, archetype, source, status, consent_text, consent_version,
+                      consented_at, confirmed_at, unsubscribed_at, confirm_token,
+                      unsubscribe_token, ip_hash
+          `
+        : await sql`
+            update subscribers
+            set status = 'unsubscribed', unsubscribed_at = ${now}
+            where lower(email) = ${cleanEmail}
+            returning id, email, archetype, source, status, consent_text, consent_version,
+                      consented_at, confirmed_at, unsubscribed_at, confirm_token,
+                      unsubscribe_token, ip_hash
+          `) as Record<string, unknown>[];
+      return rows[0] ? normalizeSubscriberRow(rows[0]) : null;
+    } catch (error) {
+      console.error("Failed unsubscribing:", error);
+      return null;
+    }
+  }
+
+  const store = readLocalStore();
+  const found = store.subscribers.find(
+    (s) => (cleanToken ? s.unsubscribe_token === cleanToken : false) || (cleanEmail ? s.email === cleanEmail : false)
+  );
+  if (!found) return null;
+  found.status = "unsubscribed";
+  found.unsubscribed_at = now;
+  writeLocalStore(store);
+  return found;
+}
+
+export async function setSubscriberStatus(
+  id: string,
+  status: SubscriberRecord["status"]
+): Promise<void> {
+  const now = new Date().toISOString();
+  if (sql) {
+    await sql`
+      update subscribers
+      set
+        status = ${status},
+        confirmed_at = case when ${status} = 'confirmed' then coalesce(confirmed_at, ${now}) else confirmed_at end,
+        unsubscribed_at = case when ${status} = 'unsubscribed' then ${now} else null end
+      where id = ${id}
+    `;
+    return;
+  }
+  const store = readLocalStore();
+  const subscriber = store.subscribers.find((s) => s.id === id);
+  if (!subscriber) return;
+  subscriber.status = status;
+  if (status === "confirmed") subscriber.confirmed_at = subscriber.confirmed_at ?? now;
+  subscriber.unsubscribed_at = status === "unsubscribed" ? now : null;
+  writeLocalStore(store);
+}
+
+/** Erasure request — removes the row entirely rather than flagging it. */
+export async function deleteSubscriberById(id: string): Promise<void> {
+  if (sql) {
+    await sql`delete from subscribers where id = ${id}`;
+    return;
+  }
+  const store = readLocalStore();
+  store.subscribers = store.subscribers.filter((s) => s.id !== id);
+  writeLocalStore(store);
 }
