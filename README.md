@@ -163,3 +163,51 @@ Then insert the account in Neon SQL Editor:
 insert into users (email, password)
 values ('admin@your-domain.com', 'PASTE_BCRYPT_HASH_HERE');
 ```
+
+## Editorial SEO + audience CRM upgrade
+
+The authenticated `/admin` desk now includes:
+
+- A one-click **Sync 9 Articles + 2 Products + 6 Affiliates to Neon** form and an
+  incomplete-catalog alert when fewer than nine articles are stored. This is an
+  explicit restore of the house seed catalog, not an import of the local store.
+  It overwrites matching article/product/affiliate catalog fields and restores
+  the staggered dates; a confirmation warns editors first. Neon executes all 17
+  upserts as one transaction. Affiliate click counts and subscriber records are
+  never reset. Legacy affiliates seeded by `neon.sql` are matched by name +
+  merchant, preserving their existing IDs and tracking URLs.
+- Six KPIs, 16:9 article thumbnails, word/plate/internal-link counts and a
+  transparent 10-check editorial SEO health heuristic (not a Google ranking or
+  E-E-A-T guarantee). Pinterest URLs use the configured `NEXT_PUBLIC_SITE_URL`,
+  otherwise the current browser origin, with encoded category campaign values.
+- A descending UK/US affiliate click leaderboard, thumbnails and tracked Test
+  links. Test clicks count toward the totals. Seed prices are indicative and
+  plates are editorial illustrations: merchant homepage URLs must be replaced
+  with approved affiliate product URLs before a monetized campaign.
+- Five audience segments: `widow`, `siren`, `heiress`, `muse`, `dispatch`. Short
+  segment names map to the quiz's canonical `velvet-widow`, `library-siren`,
+  `crimson-heiress`, `thorned-muse` dossier keys; Dispatch includes contacts with
+  no recognized archetype. Cards toggle a URL filter; export/copy still include
+  every contact, not just the selected segment.
+- **Export CSV for Gumroad / MailerLite** downloads four columns:
+  `email,archetype,source,created_at`. The importer-facing `created_at` maps to the
+  existing newsletter capture timestamp `consented_at` (the schema has no
+  independent creation timestamp). The original full consent/status CSV remains
+  available. Both are session-protected, uncached and formula-injection-safe.
+  The compact export and email copy are CRM backups, **not campaign send lists**:
+  exclude pending/withdrawn contacts before importing into a mailing campaign.
+- An editable, copyable Sunday Dispatch composer using the latest *published*
+  article and both house Gumroad links ($27 and $19 · £15). It does not send
+  emails. Review the text and add Gumroad's recipient-specific unsubscribe link.
+- Manual VIP capture validates email/segment/source, normalizes email addresses
+  and inserts a pending contact without asserting newsletter consent. Duplicate
+  emails are left untouched, including suppressed contacts. Existing erasure
+  and consent-status controls remain available.
+
+Configure `DATABASE_URL` and apply the existing schema (`neon.sql` or `npm run
+ db:push`) before syncing. In local mode, the Neon button is disabled; it never
+silently reports a local write as a successful Neon sync. No new database
+migration is required for this upgrade.
+
+Validation: `npm test`, `npm run typecheck`, `npm run build`. Tests use an isolated
+local store and a stubbed Neon HTTP transport, never live contacts or Neon data.
