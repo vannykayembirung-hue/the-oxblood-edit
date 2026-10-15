@@ -155,6 +155,17 @@ plus a CSV export that includes the wording each reader agreed to.
    - *Note*: In local development (`NODE_ENV !== "production"`), if `DATABASE_URL` is not set, the app automatically falls back to a local JSON store (`.data/local-store.json`) seeded with the nine pillar stories and the curated edit, and allows signing into `/admin/login` with `admin@oxblood.local` / `OxbloodAdmin!2026`.
    - *Note*: the same local fallback covers subscribers — they are written to `.data/local-store.json`. Until a mail provider is wired up, `/api/subscribe` returns the double opt-in link in its response (and the capture form prints it), so the confirm flow can be exercised without an inbox.
 3. In Neon SQL Editor, run `neon.sql` to create tables and seed initial content.
+   - *Note*: a database set up from an older `neon.sql` (before the newsletter)
+     has no `subscribers` table. The app creates it, or adds any missing column,
+     the first time a subscriber query runs on a server instance; once the table
+     is complete, that check runs no DDL. Every other table still comes from
+     `neon.sql`.
+   - *Note*: the admin dashboard checks the database on every visit. It names
+     the problem when Neon refuses the connection, when tables are missing, or
+     when a Vercel deployment has no `DATABASE_URL` (Vercel keeps no files, so
+     nothing could be saved). It shows nothing when all is well. Public pages
+     fall back to the seed copy whatever happens, so this notice is where a
+     database fault shows up.
 4. Start the development server:
 
    ```bash
@@ -226,5 +237,8 @@ migration is required for this upgrade.
 
 Validation: `npm test`, `npm run typecheck`, `npm run build`. Tests use an isolated
 local store and a stubbed Neon HTTP transport, never live contacts or Neon data.
+`tests/neon-subscribers.test.ts` runs every subscriber query against a real
+Postgres engine (PGlite, Postgres compiled to WebAssembly, behind the Neon HTTP
+driver), and checks that the table the app creates matches `neon.sql`.
 The capture form is exercised in jsdom (server render → reader input → hydrate →
 submit); `tsconfig.test.json` gives the test runner React's automatic JSX runtime.

@@ -99,3 +99,23 @@ test("honeypot posts are accepted and discarded either way", async () => {
   assert.equal(await stored("bot@example.com"), null);
   assert.equal(await stored("bot2@example.com"), null);
 });
+
+test("a sign-up that cannot be stored is refused, never reported as recorded", async () => {
+  // A file where the store's directory should be: writes fail as on Vercel's read-only disk.
+  fs.rmSync(".data", { recursive: true, force: true });
+  fs.writeFileSync(".data", "");
+  try {
+    const json = await POST(asJson({ email: "unstored@example.com", consent: true, source: "homepage" }));
+    assert.equal(json.status, 500);
+    assert.deepEqual(await json.json(), {
+      ok: false,
+      code: "server_error",
+      message: "The desk could not record that just now. Please try again shortly."
+    });
+    const form = await POST(asForm({ email: "unstored@example.com", consent: "on", source: "footer" }));
+    assert.equal(form.status, 303);
+    assert.equal(new URL(form.headers.get("location") ?? "").searchParams.get("state"), "server_error");
+  } finally {
+    fs.rmSync(".data", { force: true });
+  }
+});
