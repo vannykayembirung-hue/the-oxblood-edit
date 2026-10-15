@@ -497,6 +497,176 @@ export async function syncSeedCatalog(): Promise<void> {
   await sql.transaction(queries);
 }
 
+/* ---------------------------------------------------------------------------
+ * The subscribers table, created or repaired on first use.
+ *
+ * neon.sql only gained the subscribers table with the newsletter, so a Neon
+ * database set up from an earlier copy has none, and every sign-up failed with
+ * "The desk could not record that just now". Rather than depend on someone
+ * re-running the file, the first subscriber query on each server instance
+ * checks the catalogue once and creates whatever is missing: the table, any
+ * column added since, the unique index ON CONFLICT (email) relies on, and the
+ * two list indexes. When everything is in place it runs no DDL at all.
+ *
+ * The definitions mirror neon.sql and drizzle/schema.ts;
+ * tests/neon-subscribers.test.ts fails if they drift apart.
+ * ------------------------------------------------------------------------- */
+
+type SqlClient = NonNullable<typeof sql>;
+
+const CREATE_SUBSCRIBERS_TABLE = `create table if not exists subscribers (
+  id uuid primary key default gen_random_uuid(),
+  email text unique not null,
+  archetype text,
+  source text default 'unknown',
+  status text default 'pending',
+  consent_text text,
+  consent_version text,
+  consented_at timestamp default now(),
+  confirmed_at timestamp,
+  unsubscribed_at timestamp,
+  confirm_token text unique,
+  unsubscribe_token text unique,
+  ip_hash text
+)`;
+
+const SUBSCRIBER_INDEXES = [
+  "create index if not exists subscribers_status_idx on subscribers (status)",
+  "create index if not exists subscribers_consented_at_idx on subscribers (consented_at desc)"
+];
+
+/** Definitions for `alter table … add column`, for a table that predates a column. */
+const SUBSCRIBER_COLUMNS: ReadonlyArray<readonly [name: string, definition: string]> = [
+  ["id", "uuid primary key default gen_random_uuid()"],
+  ["email", "text"],
+  ["archetype", "text"],
+  ["source", "text default 'unknown'"],
+  ["status", "text default 'pending'"],
+  ["consent_text", "text"],
+  ["consent_version", "text"],
+  ["consented_at", "timestamp default now()"],
+  ["confirmed_at", "timestamp"],
+  ["unsubscribed_at", "timestamp"],
+  ["confirm_token", "text unique"],
+  ["unsubscribe_token", "text unique"],
+  ["ip_hash", "text"]
+];
+
+/** Missing table, missing column, and ON CONFLICT without a matching unique index. */
+const SCHEMA_ERROR_CODES = new Set(["42P01", "42703", "42P10"]);
+
+function isSchemaError(error: unknown): boolean {
+  const code = typeof error === "object" && error !== null ? (error as { code?: unknown }).code : undefined;
+  return typeof code === "string" && SCHEMA_ERROR_CODES.has(code);
+}
+
+/** Brings the subscribers table up to the current shape; returns the statements it ran. */
+async function repairSubscribersTable(client: SqlClient): Promise<string[]> {
+  // to_regclass resolves the name through search_path, exactly as the queries do.
+  const columns = (await client`
+    select a.attname as name,
+           exists (
+             select 1 from pg_index i
+             where i.indrelid = a.attrelid and i.indisunique and i.indnatts = 1 and i.indkey[0] = a.attnum
+           ) as is_unique
+    from pg_attribute a
+    where a.attrelid = to_regclass('subscribers') and a.attnum > 0 and not a.attisdropped
+  `) as { name: string; is_unique: boolean }[];
+
+  if (columns.length === 0) {
+    await client.transaction([CREATE_SUBSCRIBERS_TABLE, ...SUBSCRIBER_INDEXES].map((statement) => client(statement)));
+    return ["create table subscribers"];
+  }
+
+  const uniqueByColumn = new Map(columns.map((column) => [column.name, column.is_unique]));
+  const statements = SUBSCRIBER_COLUMNS.filter(([name]) => !uniqueByColumn.has(name)).map(
+    ([name, definition]) => `alter table subscribers add column if not exists ${name} ${definition}`
+  );
+  if (!uniqueByColumn.get("email")) {
+    statements.push("create unique index if not exists subscribers_email_key on subscribers (email)");
+  }
+  if (statements.length === 0) return [];
+
+  // One statement at a time: a column that cannot be added must not block the others.
+  const applied: string[] = [];
+  for (const statement of [...statements, ...SUBSCRIBER_INDEXES]) {
+    try {
+      await client(statement);
+      applied.push(statement);
+    } catch (error) {
+      console.error(`Could not prepare the Neon subscribers table (${statement}):`, error);
+    }
+  }
+  return applied;
+}
+
+let subscribersTableCheck: Promise<void> | null = null;
+
+/** Checks the subscribers table once per server instance; never throws. */
+function ensureSubscribersTable(client: SqlClient): Promise<void> {
+  subscribersTableCheck ??= repairSubscribersTable(client).then(
+    (applied) => {
+      if (applied.length > 0) console.warn(`Prepared the Neon subscribers table: ${applied.join("; ")}`);
+    },
+    (error) => {
+      subscribersTableCheck = null; // look again on the next request
+      console.error("Could not prepare the Neon subscribers table:", error);
+    }
+  );
+  return subscribersTableCheck;
+}
+
+/**
+ * Runs a subscriber query against Neon once the table is known to be ready.
+ * Should the table still turn out to be missing or short of a column (dropped
+ * or altered while this instance was warm), it is repaired and the query is
+ * retried once; a schema error means the failed statement wrote nothing.
+ */
+async function withSubscribersTable<T>(client: SqlClient, run: (client: SqlClient) => Promise<T>): Promise<T> {
+  await ensureSubscribersTable(client);
+  try {
+    return await run(client);
+  } catch (error) {
+    if (!isSchemaError(error)) throw error;
+    subscribersTableCheck = null;
+    await ensureSubscribersTable(client);
+    return run(client);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Database health, for the admin dashboard.
+ *
+ * Public pages fall back to the built-in seed copy when Neon fails, which keeps
+ * the site up but also hides the failure. The dashboard asks directly.
+ * ------------------------------------------------------------------------- */
+
+const REQUIRED_TABLES = ["articles", "products", "affiliate_links", "users", "subscribers"] as const;
+
+export type DatabaseHealth =
+  /** No DATABASE_URL: the JSON store under .data/, which cannot persist on Vercel. */
+  | { mode: "local"; persistent: boolean }
+  | { mode: "neon"; connected: true; missingTables: string[] }
+  | { mode: "neon"; connected: false; error: string };
+
+export async function getDatabaseHealth(): Promise<DatabaseHealth> {
+  if (!sql) return { mode: "local", persistent: !process.env.VERCEL };
+  const client = sql;
+  try {
+    // A fresh look on every dashboard visit, repairing the subscribers table if need be.
+    subscribersTableCheck = null;
+    await ensureSubscribersTable(client);
+    const rows = (await client(
+      `select name from (values ${REQUIRED_TABLES.map((name) => `('${name}')`).join(", ")}) as required (name)
+       where to_regclass(name) is null`
+    )) as { name: string }[];
+    return { mode: "neon", connected: true, missingTables: rows.map((row) => row.name) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { mode: "neon", connected: false, error: message.slice(0, 400) };
+  }
+}
+
 /** Manual VIP capture never fabricates consent or reactivates a suppressed address. */
 export async function addSubscriberAdmin(input: { email: string; archetype: string; source: string }): Promise<void> {
   const email = normalizeEmail(input.email);
@@ -507,9 +677,9 @@ export async function addSubscriberAdmin(input: { email: string; archetype: stri
   const source = input.source.trim();
   const note = "Manually added by the editorial desk; newsletter consent not yet recorded.";
   if (sql) {
-    await sql`insert into subscribers (email, archetype, source, status, consent_text, consent_version, confirm_token, unsubscribe_token)
+    await withSubscribersTable(sql, (client) => client`insert into subscribers (email, archetype, source, status, consent_text, consent_version, confirm_token, unsubscribe_token)
       values (${email}, ${archetype}, ${source}, 'pending', ${note}, 'admin-vip/pending', ${createToken()}, ${createToken()})
-      on conflict (email) do nothing`;
+      on conflict (email) do nothing`);
     return;
   }
   const store = readLocalStore();
@@ -561,15 +731,27 @@ function readLocalStore(): LocalStoreData {
   return structuredClone(DEFAULT_SEED_DATA);
 }
 
-function writeLocalStore(data: LocalStoreData): void {
+/** Returns false when the file could not be written (Vercel's file system is read-only). */
+function writeLocalStore(data: LocalStoreData): boolean {
   try {
     const dir = path.dirname(LOCAL_STORE_PATH);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
     fs.writeFileSync(LOCAL_STORE_PATH, JSON.stringify(data, null, 2), "utf-8");
+    return true;
   } catch (err) {
     console.error("Failed writing local store:", err);
+    return false;
+  }
+}
+
+/** A sign-up is only reported once its consent record exists somewhere. */
+function saveConsentRecord(store: LocalStoreData): void {
+  if (!writeLocalStore(store)) {
+    throw new Error(
+      "The consent record could not be saved: the local store is not writable. Set DATABASE_URL to store subscribers in Neon."
+    );
   }
 }
 
@@ -1178,47 +1360,52 @@ export async function subscribeToNewsletter(input: SubscribeInput): Promise<Subs
   const now = new Date().toISOString();
 
   if (sql) {
-    const existing = (await sql`
-      select id, email, archetype, source, status, consent_text, consent_version, consented_at, confirmed_at, unsubscribed_at, confirm_token, unsubscribe_token, ip_hash from subscribers where lower(email) = ${email} limit 1
-    `) as Record<string, unknown>[];
+    return withSubscribersTable(sql, async (client) => {
+      const existing = (await client`
+        select id, email, archetype, source, status, consent_text, consent_version, consented_at, confirmed_at, unsubscribed_at, confirm_token, unsubscribe_token, ip_hash from subscribers where lower(email) = ${email} limit 1
+      `) as Record<string, unknown>[];
 
-    if (existing[0]) {
-      const current = normalizeSubscriberRow(existing[0]);
-      const rows = (await sql`
-        update subscribers
-        set
-          archetype = coalesce(${archetype}, archetype),
-          source = ${source},
-          consent_text = ${consentText},
-          consent_version = ${consentVersion},
-          consented_at = ${now},
-          ip_hash = coalesce(${ipHash}, ip_hash),
-          status = case when status = 'confirmed' then 'confirmed' else 'pending' end,
-          unsubscribed_at = null
-        where id = ${current.id}
+      if (existing[0]) {
+        const current = normalizeSubscriberRow(existing[0]);
+        const rows = (await client`
+          update subscribers
+          set
+            archetype = coalesce(${archetype}, archetype),
+            source = ${source},
+            consent_text = ${consentText},
+            consent_version = ${consentVersion},
+            consented_at = ${now},
+            ip_hash = coalesce(${ipHash}, ip_hash),
+            status = case when status = 'confirmed' then 'confirmed' else 'pending' end,
+            unsubscribed_at = null,
+            -- rows older than the token columns get theirs now, or no link could reach them
+            confirm_token = coalesce(confirm_token, ${createToken()}),
+            unsubscribe_token = coalesce(unsubscribe_token, ${createToken()})
+          where id = ${current.id}
+          returning id, email, archetype, source, status, consent_text, consent_version, consented_at, confirmed_at, unsubscribed_at, confirm_token, unsubscribe_token, ip_hash
+        `) as Record<string, unknown>[];
+        const subscriber = normalizeSubscriberRow(rows[0]);
+        return {
+          subscriber,
+          created: false,
+          alreadyConfirmed: subscriber.status === "confirmed"
+        };
+      }
+
+      const rows = (await client`
+        insert into subscribers (email, archetype, source, status, consent_text, consent_version, consented_at, confirm_token, unsubscribe_token, ip_hash)
+        values (${email}, ${archetype}, ${source}, 'pending', ${consentText}, ${consentVersion}, ${now}, ${createToken()}, ${createToken()}, ${ipHash})
+        on conflict (email) do update set
+          archetype = coalesce(excluded.archetype, subscribers.archetype),
+          source = excluded.source,
+          consent_text = excluded.consent_text,
+          consent_version = excluded.consent_version,
+          consented_at = excluded.consented_at
         returning id, email, archetype, source, status, consent_text, consent_version, consented_at, confirmed_at, unsubscribed_at, confirm_token, unsubscribe_token, ip_hash
       `) as Record<string, unknown>[];
-      const subscriber = normalizeSubscriberRow(rows[0]);
-      return {
-        subscriber,
-        created: false,
-        alreadyConfirmed: subscriber.status === "confirmed"
-      };
-    }
 
-    const rows = (await sql`
-      insert into subscribers (email, archetype, source, status, consent_text, consent_version, consented_at, confirm_token, unsubscribe_token, ip_hash)
-      values (${email}, ${archetype}, ${source}, 'pending', ${consentText}, ${consentVersion}, ${now}, ${createToken()}, ${createToken()}, ${ipHash})
-      on conflict (email) do update set
-        archetype = coalesce(excluded.archetype, subscribers.archetype),
-        source = excluded.source,
-        consent_text = excluded.consent_text,
-        consent_version = excluded.consent_version,
-        consented_at = excluded.consented_at
-      returning id, email, archetype, source, status, consent_text, consent_version, consented_at, confirmed_at, unsubscribed_at, confirm_token, unsubscribe_token, ip_hash
-    `) as Record<string, unknown>[];
-
-    return { subscriber: normalizeSubscriberRow(rows[0]), created: true, alreadyConfirmed: false };
+      return { subscriber: normalizeSubscriberRow(rows[0]), created: true, alreadyConfirmed: false };
+    });
   }
 
   const store = readLocalStore();
@@ -1237,7 +1424,7 @@ export async function subscribeToNewsletter(input: SubscribeInput): Promise<Subs
       unsubscribed_at: null
     };
     store.subscribers[existingIdx] = updated;
-    writeLocalStore(store);
+    saveConsentRecord(store);
     return { subscriber: updated, created: false, alreadyConfirmed: updated.status === "confirmed" };
   }
 
@@ -1257,16 +1444,16 @@ export async function subscribeToNewsletter(input: SubscribeInput): Promise<Subs
     ip_hash: ipHash
   };
   store.subscribers.unshift(created);
-  writeLocalStore(store);
+  saveConsentRecord(store);
   return { subscriber: created, created: true, alreadyConfirmed: false };
 }
 
 export async function getSubscribers(limit?: number): Promise<SubscriberRecord[]> {
   if (sql) {
     try {
-      const rows = (await sql`
+      const rows = (await withSubscribersTable(sql, (client) => client`
         select id, email, archetype, source, status, consent_text, consent_version, consented_at, confirmed_at, unsubscribed_at, confirm_token, unsubscribe_token, ip_hash from subscribers order by consented_at desc
-      `) as Record<string, unknown>[];
+      `)) as Record<string, unknown>[];
       const mapped = rows.map(normalizeSubscriberRow);
       return typeof limit === "number" ? mapped.slice(0, limit) : mapped;
     } catch (error) {
@@ -1311,18 +1498,20 @@ export async function confirmSubscriberByToken(
 
   if (sql) {
     try {
-      const rows = (await sql`
-        update subscribers
-        set status = 'confirmed', confirmed_at = now()
-        where confirm_token = ${clean} and status <> 'confirmed'
-        returning id, email, archetype, source, status, consent_text, consent_version, consented_at, confirmed_at, unsubscribed_at, confirm_token, unsubscribe_token, ip_hash
-      `) as Record<string, unknown>[];
-      if (rows[0]) return normalizeSubscriberRow(rows[0]);
+      return await withSubscribersTable(sql, async (client) => {
+        const rows = (await client`
+          update subscribers
+          set status = 'confirmed', confirmed_at = now()
+          where confirm_token = ${clean} and status <> 'confirmed'
+          returning id, email, archetype, source, status, consent_text, consent_version, consented_at, confirmed_at, unsubscribed_at, confirm_token, unsubscribe_token, ip_hash
+        `) as Record<string, unknown>[];
+        if (rows[0]) return normalizeSubscriberRow(rows[0]);
 
-      const already = (await sql`
-        select id, email, archetype, source, status, consent_text, consent_version, consented_at, confirmed_at, unsubscribed_at, confirm_token, unsubscribe_token, ip_hash from subscribers where confirm_token = ${clean} limit 1
-      `) as Record<string, unknown>[];
-      return already[0] ? normalizeSubscriberRow(already[0]) : null;
+        const already = (await client`
+          select id, email, archetype, source, status, consent_text, consent_version, consented_at, confirmed_at, unsubscribed_at, confirm_token, unsubscribe_token, ip_hash from subscribers where confirm_token = ${clean} limit 1
+        `) as Record<string, unknown>[];
+        return already[0] ? normalizeSubscriberRow(already[0]) : null;
+      });
     } catch (error) {
       console.error("Failed confirming subscriber:", error);
       return null;
@@ -1356,23 +1545,25 @@ export async function unsubscribeSubscriber({
 
   if (sql) {
     try {
-      const rows = (cleanToken
-        ? await sql`
-            update subscribers
-            set status = 'unsubscribed', unsubscribed_at = ${now}
-            where unsubscribe_token = ${cleanToken}
-            returning id, email, archetype, source, status, consent_text, consent_version,
-                      consented_at, confirmed_at, unsubscribed_at, confirm_token,
-                      unsubscribe_token, ip_hash
-          `
-        : await sql`
-            update subscribers
-            set status = 'unsubscribed', unsubscribed_at = ${now}
-            where lower(email) = ${cleanEmail}
-            returning id, email, archetype, source, status, consent_text, consent_version,
-                      consented_at, confirmed_at, unsubscribed_at, confirm_token,
-                      unsubscribe_token, ip_hash
-          `) as Record<string, unknown>[];
+      const rows = (await withSubscribersTable(sql, (client) =>
+        cleanToken
+          ? client`
+              update subscribers
+              set status = 'unsubscribed', unsubscribed_at = ${now}
+              where unsubscribe_token = ${cleanToken}
+              returning id, email, archetype, source, status, consent_text, consent_version,
+                        consented_at, confirmed_at, unsubscribed_at, confirm_token,
+                        unsubscribe_token, ip_hash
+            `
+          : client`
+              update subscribers
+              set status = 'unsubscribed', unsubscribed_at = ${now}
+              where lower(email) = ${cleanEmail}
+              returning id, email, archetype, source, status, consent_text, consent_version,
+                        consented_at, confirmed_at, unsubscribed_at, confirm_token,
+                        unsubscribe_token, ip_hash
+            `
+      )) as Record<string, unknown>[];
       return rows[0] ? normalizeSubscriberRow(rows[0]) : null;
     } catch (error) {
       console.error("Failed unsubscribing:", error);
@@ -1397,14 +1588,15 @@ export async function setSubscriberStatus(
 ): Promise<void> {
   const now = new Date().toISOString();
   if (sql) {
-    await sql`
+    await withSubscribersTable(sql, (client) => client`
       update subscribers
       set
         status = ${status},
-        confirmed_at = case when ${status} = 'confirmed' then coalesce(confirmed_at, ${now}) else confirmed_at end,
-        unsubscribed_at = case when ${status} = 'unsubscribed' then ${now} else null end
+        confirmed_at = case when ${status} = 'confirmed' then coalesce(confirmed_at, ${now}::timestamp) else confirmed_at end,
+        -- the cast matters: inside CASE, Postgres would otherwise type the parameter as text
+        unsubscribed_at = case when ${status} = 'unsubscribed' then ${now}::timestamp else null end
       where id = ${id}
-    `;
+    `);
     return;
   }
   const store = readLocalStore();
@@ -1419,7 +1611,7 @@ export async function setSubscriberStatus(
 /** Erasure request — removes the row entirely rather than flagging it. */
 export async function deleteSubscriberById(id: string): Promise<void> {
   if (sql) {
-    await sql`delete from subscribers where id = ${id}`;
+    await withSubscribersTable(sql, (client) => client`delete from subscribers where id = ${id}`);
     return;
   }
   const store = readLocalStore();

@@ -1,42 +1,106 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import NewsletterCapture from "@/components/NewsletterCapture";
 import WaxSeal from "@/components/WaxSeal";
 import { ARCHETYPES } from "@/lib/villainess-quiz";
-import { NEWSLETTER_NAME, isArchetypeKey } from "@/lib/newsletter";
-
-export const metadata: Metadata = {
-  title: "Subscription Confirmed — The Oxblood Edit",
-  description: "Your double opt-in is recorded. The archetype dossier and the Sunday Dispatch follow.",
-  robots: { index: false, follow: false }
-};
+import {
+  NEWSLETTER_NAME,
+  SUBSCRIBE_ERROR_COPY,
+  isArchetypeKey,
+  isSubscribeErrorCode,
+  isSubscribeSource,
+  type SubscribeErrorCode
+} from "@/lib/newsletter";
 
 export const dynamic = "force-dynamic";
 
-export default function SubscribedPage({
-  searchParams
-}: {
-  searchParams?: { state?: string; archetype?: string };
-}) {
-  const state = searchParams?.state === "confirmed" ? "confirmed" : "invalid";
+type SearchParams = { state?: string; archetype?: string; source?: string };
+
+/**
+ * `/subscribed` — where the double opt-in confirm link lands (`confirmed` or
+ * `invalid`), and where a plain form post to `/api/subscribe` lands: `pending`
+ * when it was recorded, or one of the API's refusal codes when it was not.
+ */
+type PageState = "confirmed" | "pending" | "invalid" | SubscribeErrorCode;
+
+function resolveState(raw: string | undefined): PageState {
+  if (raw === "confirmed" || raw === "pending") return raw;
+  if (isSubscribeErrorCode(raw)) return raw;
+  return "invalid";
+}
+
+const REFUSAL_TITLES: Record<SubscribeErrorCode, string> = {
+  consent_required: "Nothing was recorded — the consent box was not ticked.",
+  invalid_email: "Nothing was recorded — that address looked incomplete.",
+  rate_limited: "Too many attempts in a minute.",
+  invalid_body: "That request arrived malformed.",
+  server_error: "The desk could not record that just now."
+};
+
+export function generateMetadata({ searchParams }: { searchParams?: SearchParams }): Metadata {
+  const state = resolveState(searchParams?.state);
+  const title =
+    state === "confirmed"
+      ? "Subscription Confirmed"
+      : state === "pending"
+        ? "Check Your Inbox"
+        : state === "invalid"
+          ? "Confirmation Link Not Recognised"
+          : "Not Subscribed Yet";
+  return {
+    // The root layout's template appends "· The Oxblood Edit".
+    title,
+    description: "The double opt-in for The Sunday Dispatch and the archetype dossier.",
+    robots: { index: false, follow: false }
+  };
+}
+
+export default function SubscribedPage({ searchParams }: { searchParams?: SearchParams }) {
+  const state = resolveState(searchParams?.state);
   const archetypeParam = searchParams?.archetype ?? "";
-  const archetype = isArchetypeKey(archetypeParam) ? ARCHETYPES[archetypeParam] : null;
+  const archetypeKey = isArchetypeKey(archetypeParam) ? archetypeParam : null;
+  const archetype = archetypeKey ? ARCHETYPES[archetypeKey] : null;
+  const source = isSubscribeSource(searchParams?.source) ? searchParams.source : "subscribed";
+  const refused = isSubscribeErrorCode(state) ? state : null;
+
+  const eyebrow =
+    state === "confirmed"
+      ? "Countersigned"
+      : state === "pending"
+        ? "Sealed · awaiting your countersignature"
+        : refused
+          ? "Unsigned"
+          : "Seal unreadable";
 
   return (
     <div className="px-[6%] py-16 pb-20">
       <div className="max-w-2xl mx-auto">
         <div className="flex items-center gap-4 mb-6">
           <WaxSeal size={52} />
-          <p className="eyebrow">{state === "confirmed" ? "Countersigned" : "Seal unreadable"}</p>
+          <p className="eyebrow">{eyebrow}</p>
         </div>
 
-        {state === "confirmed" ? (
+        {state === "confirmed" || state === "pending" ? (
           <>
-            <h1 className="text-4xl sm:text-5xl mb-5">Confirmed. Noted in the ledger.</h1>
-            <p className="text-xl text-parchment/78 mb-6">
-              The double opt-in is on record and {NEWSLETTER_NAME} will begin on the next Sunday.
-              Your consent wording, its version and the time of your opt-in are stored against your
-              address — that record is yours to inspect or delete at any time.
-            </p>
+            {state === "confirmed" ? (
+              <>
+                <h1 className="text-4xl sm:text-5xl mb-5">Confirmed. Noted in the ledger.</h1>
+                <p className="text-xl text-parchment/78 mb-6">
+                  The double opt-in is on record and {NEWSLETTER_NAME} will begin on the next
+                  Sunday. Your consent wording, its version and the time of your opt-in are stored
+                  against your address — that record is yours to inspect or delete at any time.
+                </p>
+              </>
+            ) : (
+              <>
+                <h1 className="text-4xl sm:text-5xl mb-5">Noted in the ledger.</h1>
+                <p className="text-xl text-parchment/78 mb-6">
+                  Your opt-in is recorded with the exact wording you agreed to. {NEWSLETTER_NAME}{" "}
+                  goes out on Sundays: one click in the confirmation email and the desk will keep
+                  writing. Until that click, nothing is sent.
+                </p>
+              </>
+            )}
             {archetype && (
               <div className="velvet-card velvet-card--rule p-7 mb-8">
                 <p className="eyebrow mb-3">
@@ -53,6 +117,20 @@ export default function SubscribedPage({
                 </Link>
               </div>
             )}
+          </>
+        ) : refused ? (
+          <>
+            <h1 className="text-4xl sm:text-5xl mb-5">{REFUSAL_TITLES[refused]}</h1>
+            <p className="text-xl text-parchment/78 mb-8">
+              {SUBSCRIBE_ERROR_COPY[refused]} Your address has not been stored.
+            </p>
+            <NewsletterCapture
+              source={source}
+              archetype={archetypeKey}
+              heading={archetype ? `The Sunday Dispatch · ${archetype.name} dossier` : "The Sunday Dispatch"}
+              subheading="One letter a week from the desk. Opt-in, double-confirmed, withdrawn in a click."
+              className="mb-8"
+            />
           </>
         ) : (
           <>

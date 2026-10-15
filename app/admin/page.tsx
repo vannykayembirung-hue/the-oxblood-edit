@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import {
   hasDatabaseUrl,
+  getDatabaseHealth,
   getAllArticles,
   getArticleById,
   getAllProducts,
@@ -33,6 +34,7 @@ import {
   deleteSubscriberAction
 } from "@/app/admin/actions";
 import ImageUploadField from "@/components/ImageUploadField";
+import DatabaseHealthNotice, { databaseBadge } from "@/components/DatabaseHealthNotice";
 
 import { CRM_SEGMENTS, contactSegment } from "@/lib/admin-crm";
 import { auditArticle } from "@/lib/admin-seo";
@@ -82,6 +84,11 @@ export default async function AdminDashboard({
     redirect("/admin/login");
   }
 
+  // First and on its own: it also creates the subscribers table if Neon lacks one,
+  // which the reads below should not race.
+  const databaseHealth = await getDatabaseHealth();
+  const badge = databaseBadge(databaseHealth);
+
   const [articles, products, affiliateLinks, subscribers, subscriberStats] = await Promise.all([
     getAllArticles(),
     getAllProducts(),
@@ -128,12 +135,14 @@ export default async function AdminDashboard({
             </span>
             <span
               className={`text-xs px-2.5 py-0.5 font-cinzel tracking-wider uppercase ${
-                hasDatabaseUrl
-                  ? "bg-oxblood text-cream"
-                  : "bg-gold/30 text-nearblack border border-gold"
+                !badge.healthy
+                  ? "bg-oxblood/10 text-oxblood border border-oxblood"
+                  : hasDatabaseUrl
+                    ? "bg-oxblood text-cream"
+                    : "bg-gold/30 text-nearblack border border-gold"
               }`}
             >
-              {hasDatabaseUrl ? "Neon PostgreSQL" : "Local Store Mode"}
+              {badge.label}
             </span>
           </div>
           <h1 className="text-3xl md:text-4xl">Editorial Command Center</h1>
@@ -153,6 +162,8 @@ export default async function AdminDashboard({
           </form>
         </div>
       </div>
+
+      <DatabaseHealthNotice health={databaseHealth} />
 
       {/* Notices & Errors */}
       {noticeText && (

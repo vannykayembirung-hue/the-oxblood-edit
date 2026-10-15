@@ -90,6 +90,21 @@ posting to one endpoint, `/api/subscribe`:
 
 - **Consent is a positive act.** The opt-in is an unticked checkbox; the API
   refuses a request that does not assert `consent: true` (`consent_required`).
+- **The box the reader ticked is the box that counts.** The address and the
+  consent box are *uncontrolled* inputs, read from the page at the moment of
+  submission. A box ticked before the page hydrates (slow mobile connections) or
+  restored by the browser on Back/reload is honoured; with controlled inputs it
+  was answered with "Tick the consent box and the desk will write to you." and
+  then cleared. Keep them uncontrolled — `tests/newsletter-capture.test.ts`
+  replays exactly that sequence. The box sits between the address and the
+  button, and a refusal moves focus to the field at fault (`aria-invalid`).
+- **It works before hydration, and without JavaScript.** The form is a real
+  `POST` to `/api/subscribe` (never a `GET`, which put the address in the URL)
+  and keeps the browser's own `required` checks until React takes over. JSON
+  requests get JSON; a plain form post gets a 303 to
+  `/subscribed?state=pending` — or `consent_required`, `invalid_email`,
+  `rate_limited`, `invalid_body`, `server_error`, each with the form offered
+  again. Only the outcome, a known source and archetype travel in that URL.
 - **The wording is the record.** `lib/newsletter.ts` holds the exact copy and its
   version (`newsletter-consent/2026-10-14`); the API stores both, plus the source
   surface and the timestamp, on the subscriber row.
@@ -140,6 +155,17 @@ plus a CSV export that includes the wording each reader agreed to.
    - *Note*: In local development (`NODE_ENV !== "production"`), if `DATABASE_URL` is not set, the app automatically falls back to a local JSON store (`.data/local-store.json`) seeded with the nine pillar stories and the curated edit, and allows signing into `/admin/login` with `admin@oxblood.local` / `OxbloodAdmin!2026`.
    - *Note*: the same local fallback covers subscribers — they are written to `.data/local-store.json`. Until a mail provider is wired up, `/api/subscribe` returns the double opt-in link in its response (and the capture form prints it), so the confirm flow can be exercised without an inbox.
 3. In Neon SQL Editor, run `neon.sql` to create tables and seed initial content.
+   - *Note*: a database set up from an older `neon.sql` (before the newsletter)
+     has no `subscribers` table. The app creates it, or adds any missing column,
+     the first time a subscriber query runs on a server instance; once the table
+     is complete, that check runs no DDL. Every other table still comes from
+     `neon.sql`.
+   - *Note*: the admin dashboard checks the database on every visit. It names
+     the problem when Neon refuses the connection, when tables are missing, or
+     when a Vercel deployment has no `DATABASE_URL` (Vercel keeps no files, so
+     nothing could be saved). It shows nothing when all is well. Public pages
+     fall back to the seed copy whatever happens, so this notice is where a
+     database fault shows up.
 4. Start the development server:
 
    ```bash
@@ -211,3 +237,8 @@ migration is required for this upgrade.
 
 Validation: `npm test`, `npm run typecheck`, `npm run build`. Tests use an isolated
 local store and a stubbed Neon HTTP transport, never live contacts or Neon data.
+`tests/neon-subscribers.test.ts` runs every subscriber query against a real
+Postgres engine (PGlite, Postgres compiled to WebAssembly, behind the Neon HTTP
+driver), and checks that the table the app creates matches `neon.sql`.
+The capture form is exercised in jsdom (server render → reader input → hydrate →
+submit); `tsconfig.test.json` gives the test runner React's automatic JSX runtime.
