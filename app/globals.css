@@ -335,6 +335,71 @@ img.plate-img {
   color: rgba(237, 228, 208, 0.58);
 }
 
+/* --------------------------- consent opt-in --------------------------- */
+
+/* The newsletter opt-in: a real checkbox (keyboard, screen readers, the
+ * browser's own `required` check all intact), drawn large enough in gold to be
+ * found on velvet. Unticked by default — consent is a positive act. */
+.consent-box {
+  -webkit-appearance: none;
+  appearance: none;
+  flex-shrink: 0;
+  display: inline-grid;
+  place-content: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  margin: 0.1rem 0 0;
+  border: 1.5px solid rgba(198, 161, 91, 0.9);
+  background: rgba(11, 10, 8, 0.7);
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.consent-box::before {
+  content: "";
+  width: 0.8rem;
+  height: 0.8rem;
+  background: var(--parchment);
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+  transform: scale(0);
+  transition: transform 0.12s ease-in-out;
+}
+
+.consent-box:hover {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(198, 161, 91, 0.18);
+}
+
+.consent-box:checked {
+  background: var(--oxblood);
+  border-color: var(--gold);
+}
+
+.consent-box:checked::before {
+  transform: scale(1);
+}
+
+.consent-box:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+}
+
+.consent-box[aria-invalid="true"] {
+  border-color: #e3a1ab;
+  box-shadow: 0 0 0 3px rgba(180, 72, 90, 0.55);
+}
+
+@media (forced-colors: active) {
+  .consent-box {
+    -webkit-appearance: auto;
+    appearance: auto;
+  }
+
+  .consent-box::before {
+    content: none;
+  }
+}
+
 /* -------------------------------- quiz -------------------------------- */
 
 .quiz-option {

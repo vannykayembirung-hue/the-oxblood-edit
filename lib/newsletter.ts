@@ -39,6 +39,44 @@ export const SUBSCRIBE_SOURCES = [
 
 export type SubscribeSource = (typeof SUBSCRIBE_SOURCES)[number];
 
+export function isSubscribeSource(value: unknown): value is SubscribeSource {
+  return typeof value === "string" && (SUBSCRIBE_SOURCES as readonly string[]).includes(value);
+}
+
+/**
+ * Reader-facing copy for every refusal `/api/subscribe` can give. Shared by the
+ * capture form (JSON answers) and `/subscribed` (the page a plain form post —
+ * pressed before the page hydrated, or without JavaScript — lands on).
+ */
+export const SUBSCRIBE_ERROR_COPY = {
+  invalid_email: "That address does not look complete — check it and try again.",
+  consent_required: "Tick the consent box and the desk will write to you.",
+  rate_limited: "Too many attempts in a minute. Wait a moment, then try again.",
+  invalid_body: "That request arrived malformed. Reload the page and try again.",
+  server_error: "The desk could not record that just now. Please try again shortly."
+} as const;
+
+export type SubscribeErrorCode = keyof typeof SUBSCRIBE_ERROR_COPY;
+
+export function isSubscribeErrorCode(value: unknown): value is SubscribeErrorCode {
+  return typeof value === "string" && Object.prototype.hasOwnProperty.call(SUBSCRIBE_ERROR_COPY, value);
+}
+
+/**
+ * Where a plain form post is sent after `/api/subscribe` has dealt with it.
+ * Only the outcome, a known source and a known archetype travel in the URL —
+ * never the address, so it cannot end up in logs or browser history.
+ */
+export function subscribedPagePath(
+  state: "pending" | SubscribeErrorCode,
+  context: { source?: unknown; archetype?: unknown } = {}
+): string {
+  const params = new URLSearchParams({ state });
+  if (isSubscribeSource(context.source)) params.set("source", context.source);
+  if (isArchetypeKey(context.archetype)) params.set("archetype", context.archetype);
+  return `/subscribed?${params.toString()}`;
+}
+
 export interface DossierPayload {
   archetype: ArchetypeKey;
   archetypeName: string;
