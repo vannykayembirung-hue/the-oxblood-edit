@@ -27,6 +27,7 @@ Forcer le cerveau à abandonner les objets pour lire leur ombre combinée, seule
 - **Ancre de mémoire :** un **point de lumière** traverse l'ombre au niveau de la tête = **l'œil de la girafe**. C'est LE détail cité ensuite (« l'œil qui brille »).
 - **Hiérarchie :** bandeau haut-centre = accroche → juste en dessous, énoncé « Quel animal se cache dans l'ombre ? » → l'ombre-girafe occupe ~55 % du centre (le mystère) → bas-**centre**, cartouche CTA « UN SEUL MOT EN COMMENTAIRE 👇 » + micro-mention « 3 mini-chansons à ton prénom à gagner ». Mention « ÉPISODE 1 » centrée au-dessus du CTA.
 - **Règles dures :** aucun texte critique dans les coins (marges « safe » de 12 % partout) ; ombre dessinée en **une seule silhouette** puis floutée 6–8 px, même teinte que les petites ombres au sol ; l'ombre de la **plante tombe au sol uniquement**, jamais sur le mur. **Test terrain :** montrer 3 secondes à 5 personnes — si « cerf » revient, raccourcir les ossicones ; si « cheval », accentuer la pente du dos.
+- **Rendus livrés (JPG, prêts à uploader) :** `assets/ombre-accidentelle-ep01-post-4x5-1080x1350.jpg` (post feed, textes incrustés, mystère entier sur fond flouté) · `assets/ombre-accidentelle-ep01-story-9x16-1080x1920.jpg` (Story du soir, centre laissé libre pour sticker sondage natif, sans spoil) · scène source sans texte : `assets/ombre-accidentelle-ep01-scene.jpg` (768 × 1376).
 
 ## 5. 📋 CORPS DU POST — 100 % prêt à copier-coller
 
