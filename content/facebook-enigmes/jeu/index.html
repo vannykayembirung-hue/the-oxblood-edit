@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>🎮 Fusion d'ombres — le jeu</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background:#181410; color:#1C1E21; }
+  .banner { background:#2A1A12; color:#FFF3E0; text-align:center; padding:18px 14px 14px; }
+  .banner h1 { margin:0; font-size:26px; letter-spacing:.5px; }
+  .banner p { margin:6px 0 0; font-size:15px; opacity:.9; }
+  .steps { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:10px; font-size:14px; font-weight:700; }
+  .steps span { background:#D96C2C; color:#fff; border-radius:999px; padding:6px 12px; }
+  .wrap { max-width:430px; margin:14px auto 28px; padding:0 10px; }
+  .post { background:#fff; border-radius:16px; overflow:hidden; box-shadow:0 18px 50px rgba(0,0,0,.5); }
+  .phead { padding:12px 14px 4px; display:flex; gap:10px; align-items:center; }
+  .avatar { width:44px; height:44px; border-radius:50%; background:#D96C2C; color:#fff; font-weight:900; display:flex; align-items:center; justify-content:center; font-size:15px; flex:none; }
+  .pname { font-weight:800; font-size:15px; line-height:1.2; }
+  .pmeta { font-size:12px; color:#65676B; }
+  .badge { margin-left:auto; background:#FFF3E0; color:#9A4A12; border:1px solid rgba(217,108,44,.45); font-size:10px; font-weight:900; border-radius:999px; padding:5px 9px; text-transform:uppercase; }
+  .ptext { padding:6px 14px 10px; font-size:15px; line-height:1.45; }
+  .media { position:relative; background:#B85A24; }
+  svg.game { display:block; width:100%; touch-action:none; user-select:none; -webkit-user-select:none; cursor:ew-resize; }
+  .chip { position:absolute; background:rgba(0,0,0,.72); color:#fff; border-radius:999px; padding:5px 11px; font-weight:800; font-size:13px; pointer-events:none; }
+  .chip-clock { top:10px; right:10px; }
+  .chip-fusion { bottom:10px; right:10px; font-size:12px; }
+  .hint { position:absolute; left:50%; top:38%; transform:translateX(-50%); width:max-content; max-width:88%; text-align:center; }
+  .controls { padding:12px 14px 8px; }
+  .controls label { font-size:12px; font-weight:800; color:#65676B; }
+  input[type=range] { width:100%; accent-color:#D96C2C; height:32px; }
+  .bigbtn { width:100%; min-height:50px; border:0; border-radius:10px; background:#1877F2; color:#fff; font-size:16px; font-weight:800; cursor:pointer; }
+  .bigbtn:hover { background:#1466D6; }
+  .bigbtn:disabled { opacity:.5; cursor:not-allowed; }
+  .msg { margin-top:10px; border-radius:10px; padding:10px 12px; font-size:14px; font-weight:700; display:none; }
+  .msg.warn { background:#FFF3E0; color:#7A3E0E; display:block; }
+  .msg.win { background:#E7F6EC; color:#14632F; display:block; }
+  .score { text-align:center; font-weight:800; color:#14632F; font-size:14px; margin-top:8px; display:none; }
+  .counts { padding:8px 14px 0; font-size:13px; color:#65676B; border-top:1px solid #E4E6EB; margin:6px 14px 0; padding-left:0; padding-right:0; }
+  .actions { display:grid; grid-template-columns:repeat(4,1fr); gap:2px; padding:6px 8px; border-top:1px solid #E4E6EB; margin:0 6px; }
+  .actions button { border:0; background:transparent; border-radius:8px; padding:10px 2px; font-size:13px; font-weight:700; color:#65676B; cursor:pointer; }
+  .actions button:hover { background:#F0F2F5; }
+  .actions button.on-heart { color:#E41E3F; } .actions button.on-wow { color:#B8860B; } .actions button.on-save { color:#1877F2; }
+  .comments { padding:4px 14px 12px; }
+  .crow { display:flex; gap:9px; margin-top:10px; }
+  .cava { width:32px; height:32px; border-radius:50%; color:#fff; font-size:11px; font-weight:900; display:flex; align-items:center; justify-content:center; flex:none; background:#8A8D91; }
+  .cava.page { background:#D96C2C; } .cava.player { background:#1877F2; }
+  .cbubble { background:#F0F2F5; border-radius:16px; padding:7px 12px; max-width:85%; }
+  .cname { font-size:13px; font-weight:800; line-height:1.2; }
+  .ctext { font-size:14px; line-height:1.35; }
+  .cform { display:flex; gap:9px; align-items:center; margin-top:12px; }
+  .cform input { flex:1; min-width:0; border:0; background:#F0F2F5; border-radius:999px; padding:11px 14px; font-size:14px; outline:none; }
+  .cform input:focus { box-shadow:0 0 0 2px #1877F2; }
+  .send { border:0; background:#1877F2; color:#fff; font-weight:800; font-size:13px; border-radius:999px; padding:11px 14px; cursor:pointer; flex:none; }
+  .tagline { text-align:center; font-size:12px; color:#65676B; padding:0 14px 12px; }
+  .reward { display:none; border-top:1px solid #E4E6EB; background:#FFFBF2; padding:12px 14px 14px; font-size:14px; line-height:1.45; }
+  .reward.show { display:block; }
+  .rform { display:flex; gap:8px; margin-top:10px; }
+  .rform input { flex:1; min-width:0; border:1px solid #E4E6EB; border-radius:9px; padding:11px 12px; font-size:14px; outline:none; }
+  .rform input:focus { box-shadow:0 0 0 2px #D96C2C; }
+  .rbtn { border:0; background:#25D366; color:#fff; font-weight:800; font-size:13px; border-radius:9px; padding:11px 13px; cursor:pointer; flex:none; }
+  .replay { width:100%; margin-top:12px; border:0; background:#1C1E21; color:#fff; font-weight:800; font-size:14px; border-radius:9px; padding:12px; cursor:pointer; }
+  .small { font-size:11px; color:#65676B; margin-top:6px; }
+  .done { font-weight:800; color:#14632F; display:none; }
+  .foot { text-align:center; color:rgba(255,243,224,.75); font-size:12px; padding:0 16px 24px; line-height:1.5; }
+</style>
+</head>
+<body>
+
+<div class="banner">
+  <h1>🎮 FUSION D'OMBRES</h1>
+  <p>L'animal n'existe qu'à <strong>une seule heure</strong>. À toi de la fabriquer.</p>
+  <div class="steps"><span>1️⃣ Glisse le soleil</span><span>2️⃣ 📸 Photographie</span><span>3️⃣ 💬 Un seul mot</span></div>
+</div>
+
+<div class="wrap">
+  <article class="post" aria-label="Publication jeu Fusion d'ombres">
+    <div class="phead">
+      <div class="avatar">OA</div>
+      <div><div class="pname">Ombre Accidentelle</div><div class="pmeta">Dimanche 19:00 · 🌍 · Épisode 1</div></div>
+      <div class="badge">Jouable ici</div>
+    </div>
+    <div class="ptext">
+      <strong>90 % voient un salon. Pas l'animal. 😏</strong><br>
+      👆 <strong>Fais glisser le soleil</strong> dans la photo.<br>
+      📸 Photographie le moment où les ombres fusionnent.<br>
+      💬 Écris le nom de l'animal — <strong>un seul mot</strong>.
+    </div>
+
+    <div class="media">
+      <svg id="game" class="game" viewBox="0 0 400 500" role="img" aria-label="Fais glisser le soleil pour fusionner les ombres des meubles en un animal">
+        <defs>
+          <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#C46228"/><stop offset="70%" stop-color="#D96C2C"/><stop offset="100%" stop-color="#B85A24"/>
+          </linearGradient>
+          <filter id="soft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="3.2"/></filter>
+          <filter id="fusionBlur" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur id="fusionStd" stdDeviation="7"/></filter>
+          <g id="o-coat" stroke="currentColor" fill="currentColor" stroke-width="4" stroke-linecap="round">
+            <rect x="-2.5" y="-138" width="5" height="138" stroke="none"/>
+            <path d="M0,-130 q-16,-2 -19,-18" fill="none"/><path d="M0,-126 q16,-4 20,-20" fill="none"/><path d="M0,-110 q-14,0 -17,-12" fill="none"/>
+            <circle cx="-19" cy="-150" r="4.5" stroke="none"/><circle cx="20" cy="-148" r="4.5" stroke="none"/>
+            <path d="M0,-16 L-15,0 M0,-16 L15,0 M0,-16 L0,0" fill="none"/>
+          </g>
+          <g id="o-table" fill="currentColor">
+            <ellipse cx="0" cy="-88" rx="37" ry="9"/><rect x="-2.5" y="-88" width="5" height="82"/><ellipse cx="0" cy="-4" rx="17" ry="4.5"/>
+          </g>
+          <g id="o-stool" stroke="currentColor" fill="currentColor" stroke-width="4.5" stroke-linecap="round">
+            <rect x="-28" y="-64" width="56" height="9" rx="4" stroke="none"/>
+            <path d="M-20,-55 L-24,0 M-7,-55 L-7,0 M7,-55 L7,0 M20,-55 L24,0" fill="none"/>
+          </g>
+        </defs>
+
+        <rect width="400" height="500" fill="url(#wall)"/>
+        <rect x="72" y="66" width="302" height="338" fill="#F2A54A" opacity="0.5"/>
+        <rect x="0" y="452" width="400" height="48" fill="#7A4A26"/>
+        <rect x="0" y="452" width="400" height="5" fill="#FFF3E0" opacity="0.65"/>
+
+        <g id="objShadows" filter="url(#soft)" opacity="0.5">
+          <use id="sh-coat" href="#o-coat" style="color:#2A1A12"/>
+          <use id="sh-table" href="#o-table" style="color:#2A1A12"/>
+          <use id="sh-stool" href="#o-stool" style="color:#2A1A12"/>
+        </g>
+
+        <g id="giraffe" opacity="0" filter="url(#fusionBlur)">
+          <path d="M104,128 L112,106 L132,94 L134,78 L142,66 L148,80 L157,69 L165,84 L180,94 L196,116 L282,208 L348,232 L360,246 L366,306 L373,322 L362,327 L355,298 L354,360 L356,438 L343,438 L339,358 L330,316 L329,438 L317,438 L311,330 L268,302 L240,322 L239,438 L227,438 L221,318 L213,300 L207,438 L195,438 L192,302 L176,220 L150,150 L124,133 Z" fill="#2A1A12"/>
+          <circle id="eye" cx="140" cy="104" r="4.2" fill="#FFF3E0" opacity="0"/>
+        </g>
+
+        <ellipse id="plantShadow" cx="70" cy="466" rx="34" ry="7" fill="#2A1A12" opacity="0.35" filter="url(#soft)"/>
+
+        <g transform="translate(46 452)">
+          <path d="M-15,-28 L15,-28 L10,0 L-10,0 Z" fill="#A8542F"/>
+          <path d="M0,-28 L0,-74" stroke="#2F5D2A" stroke-width="4" stroke-linecap="round"/>
+          <ellipse cx="-14" cy="-66" rx="15" ry="8" fill="#3E7A34" transform="rotate(-28 -14 -66)"/>
+          <ellipse cx="14" cy="-74" rx="15" ry="8" fill="#3E7A34" transform="rotate(24 14 -74)"/>
+          <ellipse cx="0" cy="-88" rx="14" ry="8" fill="#4C8A3F" transform="rotate(-6 0 -88)"/>
+          <ellipse cx="-12" cy="-46" rx="12" ry="7" fill="#356B2D" transform="rotate(-18 -12 -46)"/>
+          <ellipse cx="13" cy="-50" rx="12" ry="7" fill="#356B2D" transform="rotate(16 13 -50)"/>
+        </g>
+        <use href="#o-coat" style="color:#5A3A22" transform="translate(118 452)"/>
+        <use href="#o-table" style="color:#6B4527" transform="translate(205 452)"/>
+        <use href="#o-stool" style="color:#6B4527" transform="translate(300 452)"/>
+
+        <path d="M36,106 Q200,8 364,106" fill="none" stroke="#FFF3E0" stroke-width="2" stroke-dasharray="5 7" opacity="0.75"/>
+        <circle id="sunGlow" r="27" fill="#FFD98A" opacity="0.35"/>
+        <circle id="sunCore" r="16" fill="#FFE9B0" stroke="#D96C2C" stroke-width="3"/>
+      </svg>
+      <div id="hint" class="chip hint">👆 Glisse ton doigt sur la photo pour déplacer le soleil</div>
+      <div class="chip chip-clock">🕒 <span id="clock">9h12</span></div>
+      <div class="chip chip-fusion">Fusion : <span id="fusionPct">0 %</span></div>
+    </div>
+
+    <div class="controls">
+      <label for="sunRange">Heure de la photo — de 6h00 à 20h00</label>
+      <input id="sunRange" type="range" min="360" max="1200" step="1" value="552" aria-label="Déplacer le soleil, de 6 heures à 20 heures">
+      <button id="captureBtn" class="bigbtn" type="button">📸 Photographier l'ombre (9h12)</button>
+      <p id="captureMsg" class="msg" role="status"></p>
+      <p id="scoreLine" class="score"></p>
+    </div>
+
+    <p class="counts" id="countsLine">❤️ 128 · 😮 342 · 💬 3 commentaires</p>
+    <div class="actions">
+      <button id="btnHeart" type="button">❤️ Vu &lt;10 s</button>
+      <button id="btnWow" type="button">😮 Je cherche</button>
+      <button id="btnFocus" type="button">💬 Répondre</button>
+      <button id="btnSave" type="button">🔖 Enregistrer</button>
+    </div>
+
+    <div class="comments">
+      <div id="commentList"></div>
+      <form id="guessForm" class="cform">
+        <div class="cava player">TOI</div>
+        <input id="guessInput" type="text" placeholder="Le nom de l'animal, en un seul mot…" autocomplete="off" aria-label="Ta réponse en un seul mot">
+        <button class="send" type="submit">Envoyer</button>
+      </form>
+    </div>
+    <p class="tagline">Teste ton ami le plus sûr de lui : je parie qu'il répond « cheval ». 😄</p>
+
+    <div id="reward" class="reward">
+      <div id="optinWrap">
+        🎁 Pour recevoir ta mini-chanson personnalisée, laisse ton numéro WhatsApp UNIQUEMENT si tu le veux ; on t'écrit une seule fois, tu peux nous écrire STOP à tout moment pour te désinscrire.
+        <form id="optinForm" class="rform">
+          <input type="tel" required placeholder="WhatsApp (facultatif, démo)" aria-label="Numéro WhatsApp, uniquement si tu le veux — champ de démonstration">
+          <button class="rbtn" type="submit">Je veux ma chanson</button>
+        </form>
+        <p class="small">Sans obligation. Prototype : aucune donnée n'est envoyée ni stockée.</p>
+      </div>
+      <p id="optinDone" class="done">✅ C'est noté ! (démo — rien n'a été envoyé)</p>
+      <button id="replayBtn" class="replay" type="button">↺ Rejouer l'épisode 1</button>
+    </div>
+  </article>
+</div>
+
+<p class="foot">Boucle complète dans la publication : jouer → photographier → commenter en un mot → révélation → récompense.<br>Tout se passe sur cette page, aucune inscription.</p>
+
+<script>
+(function(){
+  var MIN=360, MAX=1200, TARGET=1015, START=552; // 06:00, 20:00, fusion 16:55, départ 09:12
+  var minutes=START, attempts=0, revealed=false, hearts=128, wows=342, reacted=null, saved=false;
+  var $=function(id){return document.getElementById(id);};
+  var svg=$('game'), range=$('sunRange'), clock=$('clock'), pct=$('fusionPct'), hint=$('hint');
+  var sunGlow=$('sunGlow'), sunCore=$('sunCore'), objShadows=$('objShadows'), giraffe=$('giraffe'), eye=$('eye');
+  var shCoat=$('sh-coat'), shTable=$('sh-table'), shStool=$('sh-stool'), plantShadow=$('plantShadow'), fusionStd=$('fusionStd');
+  var captureBtn=$('captureBtn'), captureMsg=$('captureMsg'), scoreLine=$('scoreLine');
+  var countsLine=$('countsLine'), commentList=$('commentList');
+  var SEEDS=[['Nadia','cheval ??','seed'],['Bruno','Moi je vois un cerf quand je mets le soleil le matin 😅','seed'],['Léa',"L'œil qui brille sur le mur 👀",'seed']];
+
+  function clamp01(v){return Math.min(1,Math.max(0,v));}
+  function smooth(v){return v*v*(3-2*v);}
+  function fmt(min){var h=Math.floor(min/60), m=Math.round(min%60); return h+'h'+String(m).padStart(2,'0');}
+  function normalize(w){return w.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();}
+
+  function render(){
+    var t=(minutes-MIN)/(MAX-MIN), tT=(TARGET-MIN)/(MAX-MIN), d=Math.abs(t-tT);
+    var fusion=smooth(clamp01(1-d/0.16));
+    var sunX=36+328*t, sunY=106-Math.sin(Math.PI*t)*56;
+    var skew=-30+42*t, shift=-46+120*t;
+    sunGlow.setAttribute('cx',sunX); sunGlow.setAttribute('cy',sunY);
+    sunCore.setAttribute('cx',sunX); sunCore.setAttribute('cy',sunY);
+    shCoat.setAttribute('transform','translate('+(118+shift)+' 322) skewX('+skew+') scale(1.45)');
+    shTable.setAttribute('transform','translate('+(205+shift)+' 330) skewX('+skew+') scale(1.6)');
+    shStool.setAttribute('transform','translate('+(300+shift)+' 352) skewX('+skew+') scale(1.7)');
+    objShadows.setAttribute('opacity',(0.52*(1-fusion*0.88)).toFixed(3));
+    var gDx=(tT-t)*190, gSkew=(tT-t)*-38;
+    giraffe.setAttribute('transform','translate('+(200+gDx)+' 250) skewX('+gSkew+') translate(-200 -250)');
+    giraffe.setAttribute('opacity',fusion.toFixed(3));
+    eye.setAttribute('opacity',fusion.toFixed(3));
+    fusionStd.setAttribute('stdDeviation',((1-fusion)*7).toFixed(2));
+    plantShadow.setAttribute('cx',70+shift*0.35);
+    clock.textContent=fmt(minutes);
+    pct.textContent=Math.round(fusion*100)+' %';
+    range.value=minutes;
+    captureBtn.textContent="📸 Photographier l'ombre ("+fmt(minutes)+')';
+  }
+
+  function updateCounts(){
+    countsLine.textContent='❤️ '+hearts+' · 😮 '+wows+' · 💬 '+commentList.children.length+' commentaires'+(saved?' · 🔖 enregistré':'');
+  }
+  function addComment(author,text,kind){
+    var row=document.createElement('div'); row.className='crow';
+    var av=document.createElement('div'); av.className='cava'+(kind==='page'?' page':kind==='player'?' player':''); av.textContent=author.slice(0,2).toUpperCase();
+    var bub=document.createElement('div'); bub.className='cbubble';
+    var nm=document.createElement('div'); nm.className='cname'; nm.textContent=author;
+    var tx=document.createElement('div'); tx.className='ctext'; tx.textContent=text;
+    bub.appendChild(nm); bub.appendChild(tx); row.appendChild(av); row.appendChild(bub);
+    commentList.appendChild(row); updateCounts();
+  }
+  function pageReply(text){ setTimeout(function(){addComment('Ombre Accidentelle',text,'page');},650); }
+  function seedComments(){ commentList.innerHTML=''; SEEDS.forEach(function(s){addComment(s[0],s[1],s[2]);}); }
+
+  var dragging=false;
+  function fromPointer(clientX){
+    var r=svg.getBoundingClientRect();
+    var ratio=clamp01((clientX-r.left)/r.width);
+    minutes=Math.round(MIN+ratio*(MAX-MIN));
+    hint.style.display='none';
+    render();
+  }
+  svg.addEventListener('pointerdown',function(e){dragging=true; try{svg.setPointerCapture(e.pointerId);}catch(_){} fromPointer(e.clientX);});
+  svg.addEventListener('pointermove',function(e){ if(dragging) fromPointer(e.clientX); });
+  svg.addEventListener('pointerup',function(){dragging=false;});
+  svg.addEventListener('pointercancel',function(){dragging=false;});
+  range.addEventListener('input',function(){ minutes=+range.value; hint.style.display='none'; render(); });
+
+  captureBtn.addEventListener('click',function(){
+    if(revealed) return;
+    var diff=Math.abs(minutes-TARGET); attempts++;
+    captureMsg.style.display='block';
+    if(diff<=12){
+      var score=Math.max(1,Math.round(100-diff*0.6));
+      revealed=true; captureBtn.disabled=true;
+      captureMsg.className='msg win';
+      captureMsg.textContent="📸 Fusion capturée à "+fmt(minutes)+" — précision "+score+" %. L'animal existe ! À toi de le nommer en un mot.";
+      scoreLine.style.display='block';
+      scoreLine.textContent='Heure exacte de la fusion : 16h55 🌇 · Ton score : '+score+' %';
+      $('reward').classList.add('show');
+      pageReply("Quelqu'un vient de photographier la fusion 👀 Réponse officielle dans le fil : écrivez le nom de l'animal, un seul mot.");
+    } else if(diff<=35){
+      captureMsg.className='msg warn';
+      captureMsg.textContent=(minutes<TARGET?"Presque… l'ombre tremble encore. Encore un peu plus vers le soir. 🌇":"Presque… l'ombre se défait. Reviens un peu en arrière. 🌤️")+' · Tentative '+attempts;
+    } else {
+      captureMsg.className='msg warn';
+      captureMsg.textContent=(minutes<TARGET?'Trop tôt : les ombres sont encore séparées. Fais avancer le soleil. ☀️':'Trop tard : la fusion est passée. Rembobine le soleil. ☀️')+' · Tentative '+attempts;
+    }
+  });
+
+  $('guessForm').addEventListener('submit',function(e){
+    e.preventDefault();
+    var input=$('guessInput'), word=input.value.trim();
+    if(!word) return;
+    addComment('Toi',word,'player'); input.value='';
+    var ok=['girafe','girafes'].indexOf(normalize(word))>=0;
+    if(revealed){
+      pageReply(ok?'✅ Bonne réponse officielle : GIRAFE 🦒 (cou incliné, 2 ossicones sans ramures, dos en pente — et la plante était innocente).':"La réponse officielle est tombée plus haut 👀 — ce n'était pas celui-là.");
+    } else {
+      pageReply(ok?"👀 Toi, tu regardes au bon endroit… Je ne confirme rien tant que personne n'a photographié la fusion 📸":"Tu regardes encore les meubles 😏 Fais glisser le soleil et pars de l'œil qui brille sur le mur.");
+    }
+  });
+
+  $('btnHeart').addEventListener('click',function(){
+    if(reacted==='heart') return;
+    hearts++; if(reacted==='wow') wows--; reacted='heart';
+    this.className='on-heart'; $('btnWow').className=''; updateCounts();
+  });
+  $('btnWow').addEventListener('click',function(){
+    if(reacted==='wow') return;
+    wows++; if(reacted==='heart') hearts--; reacted='wow';
+    this.className='on-wow'; $('btnHeart').className=''; updateCounts();
+  });
+  $('btnFocus').addEventListener('click',function(){ $('guessInput').focus(); });
+  $('btnSave').addEventListener('click',function(){
+    saved=!saved; this.className=saved?'on-save':''; this.textContent=saved?'🔖 Enregistré':'🔖 Enregistrer'; updateCounts();
+  });
+  $('optinForm').addEventListener('submit',function(e){
+    e.preventDefault(); $('optinWrap').style.display='none'; $('optinDone').style.display='block';
+  });
+  $('replayBtn').addEventListener('click',function(){
+    minutes=START; attempts=0; revealed=false;
+    captureBtn.disabled=false; captureMsg.style.display='none'; captureMsg.className='msg';
+    scoreLine.style.display='none'; $('reward').classList.remove('show');
+    $('optinWrap').style.display='block'; $('optinDone').style.display='none';
+    seedComments(); render();
+  });
+
+  seedComments(); render(); updateCounts();
+})();
+</script>
+</body>
+</html>
